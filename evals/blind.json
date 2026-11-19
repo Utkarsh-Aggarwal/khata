@@ -1,0 +1,22 @@
+[
+ {"text": "Kavita ko 260 udhaar", "intent": "add_credit", "customer": "Kavita", "paise": 26000},
+ {"text": "Kavita ne saadhe teen sau diye", "intent": "add_payment", "customer": "Kavita", "paise": 35000},
+ {"text": "Sanjay bhai ka 1,450 udhaar likh lo", "intent": "add_credit", "customer": "Sanjay", "paise": 145000},
+ {"text": "Sanjay se 1000 cash mila", "intent": "add_payment", "customer": "Sanjay", "paise": 100000},
+ {"text": "Put 90 on Farhan's account", "intent": "add_credit", "customer": "Farhan", "paise": 9000},
+ {"text": "Farhan paid back 90", "intent": "add_payment", "customer": "Farhan", "paise": 9000},
+ {"text": "how much does Farhan owe", "intent": "balance", "customer": "Farhan", "paise": null},
+ {"text": "राधा को 75 रुपये का उधार", "intent": "add_credit", "customer": "राधा", "paise": 7500},
+ {"text": "राधा ने पचास रुपये दिए", "intent": "add_payment", "customer": "राधा", "paise": 5000},
+ {"text": "राधा का कितना बाकी है", "intent": "balance", "customer": "राधा", "paise": null},
+ {"text": "ਜਸਪ੍ਰੀਤ ਨੂੰ ਢਾਈ ਸੌ ਉਧਾਰ", "intent": "add_credit", "customer": "ਜਸਪ੍ਰੀਤ", "paise": 25000},
+ {"text": "ਜਸਪ੍ਰੀਤ ਨੇ 100 ਜਮ੍ਹਾ ਕਰਾਏ", "intent": "add_payment", "customer": "ਜਸਪ੍ਰੀਤ", "paise": 10000},
+ {"text": "Ravi Kumar ko 3000 udhaar", "intent": "add_credit", "customer": "Ravi Kumar", "paise": 300000},
+ {"text": "Ravi ne 500 GPay kiya", "intent": "add_payment", "customer": "Ravi", "paise": 50000},
+ {"text": "aakhri entry cancel karo", "intent": "undo", "customer": null, "paise": null},
+ {"text": "Pooja ko sawa do sau udhaar", "intent": "add_credit", "customer": "Pooja", "paise": 22500},
+ {"text": "Imran ko 40 hazaar udhaar", "intent": "add_credit", "customer": "Imran", "paise": 4000000},
+ {"text": "Imran ne aaj 5000 jama kiye", "intent": "add_payment", "customer": "Imran", "paise": 500000},
+ {"text": "Geeta ko 120 diye doodh ke", "intent": "add_credit", "customer": "Geeta", "paise": 12000},
+ {"text": "kaun kaun baaki hai", "intent": "list", "customer": null, "paise": null}
+]

@@ -24,8 +24,13 @@ WORDS: dict[str, Fraction] = {w: Fraction(i + 1) for i, w in enumerate(_HI)}
 WORDS.update({"panch": Fraction(5), "chhe": Fraction(6), "che": Fraction(6), "sath": Fraction(60),
               "dus": Fraction(10), "bis": Fraction(20), "tis": Fraction(30), "chaalis": Fraction(40),
               "pachaas": Fraction(50), "dedh": Fraction(3, 2), "dhai": Fraction(5, 2),
-              "dhaai": Fraction(5, 2), "sawa": Fraction(5, 4), "adha": Fraction(1, 2),
-              "aadha": Fraction(1, 2), "paune": Fraction(3, 4)})
+              "dhaai": Fraction(5, 2), "adha": Fraction(1, 2), "aadha": Fraction(1, 2)})
+# Modifiers act on the next number: sawa do = 2.25, saadhe teen = 3.5, paune do = 1.75.
+# Directly before a multiplier they mean 1 +/- x: sawa sau = 125, paune sau = 75.
+MODS = {"sawa": Fraction(1, 4), "savva": Fraction(1, 4), "सवा": Fraction(1, 4), "ਸਵਾ": Fraction(1, 4),
+        "saadhe": Fraction(1, 2), "sadhe": Fraction(1, 2), "sade": Fraction(1, 2),
+        "साढ़े": Fraction(1, 2), "साढे": Fraction(1, 2), "ਸਾਢੇ": Fraction(1, 2),
+        "paune": Fraction(-1, 4), "pone": Fraction(-1, 4), "पौने": Fraction(-1, 4), "ਪੌਣੇ": Fraction(-1, 4)}
 _EN = ("one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
        "fifteen sixteen seventeen eighteen nineteen").split()
 WORDS.update({w: Fraction(i + 1) for i, w in enumerate(_EN)})
@@ -82,18 +87,25 @@ def parse_amount(text: str) -> tuple[int | None, set[int]]:
             elif j < len(low) and re.fullmatch(r"k", low[j]):
                 val *= 1000; idx.add(j)
             cand = (int(val * 100), idx)
-        elif t in WORDS or t in MULT:
+        elif re.fullmatch(r"\d+(\.\d+)?k", t):
+            cand = (int(Fraction(t[:-1]) * 1000 * 100), {i})
+        elif t in WORDS or t in MULT or t in MODS:
             total, cur, idx, j, seen = Fraction(0), Fraction(0), set(), i, False
-            while j < len(low) and (low[j] in WORDS or low[j] in MULT):
+            mod: Fraction | None = None
+            while j < len(low) and (low[j] in WORDS or low[j] in MULT or low[j] in MODS):
                 w = low[j]
-                if w in WORDS:
-                    cur += WORDS[w]
+                if w in MODS:
+                    mod = MODS[w]
+                elif w in WORDS:
+                    cur += WORDS[w] + (mod or 0); mod = None
                 else:
                     m = MULT[w]
+                    base = cur or (1 + mod if mod is not None else 1)
+                    mod = None
                     if m >= 1000:
-                        total += (cur or 1) * m; cur = Fraction(0)
+                        total += base * m; cur = Fraction(0)
                     else:
-                        cur = (cur or 1) * m
+                        cur = base * m
                 idx.add(j); j += 1; seen = True
             val = total + cur
             if not seen or val == 0:
@@ -139,7 +151,14 @@ STOP = (CREDIT | PAYMENT | BAL | LIST | UNDO | HELP | NE | KO | PAST | {
     "रुपए", "ਰੁਪਏ", "₹", "inr", "ka", "hai", "hain", "है", "ਹੈ", "mein", "me", "में", "the",
     "to", "for", "from", "of", "a", "and", "aur", "और", "ਅਤੇ", "dunga", "dega", "dungi",
     "देगा", "देंगे", "दूँगा", "दूंगा", "ਦੇਵਾਂਗਾ", "ਦੇਵੇਗਾ", "will", "pay", "back", "on", "due",
-    "by", "wapis", "kuchh", "kuch", "रु", "please", "bhai", "ji", "जी", "ਜੀ", "भाई", "ਭਾਈ", "din", "दिन"}) | set(WORDS) | set(MULT)
+    "by", "kiye", "kiya", "kie", "kar", "karo", "किए", "किये", "किया", "कर", "ਕੀਤੇ", "ਕੀਤਾ",
+    "degi", "denge", "dedega", "dedegi", "देगी", "ਦੇਵੇਗੀ", "hua", "hui", "हुआ", "wapis", "kuchh", "kuch", "रु", "please", "bhai", "ji", "जी", "ਜੀ", "भाई", "ਭਾਈ", "din", "दिन", "give", "credit", "upi", "cash", "gpay", "paytm", "phonepe", "online",
+    "batao", "bata", "बताओ", "ਦੱਸੋ", "likh", "likho", "लिखो", "लिख", "ਲਿਖੋ", "do", "dena", "entry",
+    "pichhli", "pichli", "last", "पिछली", "ਪਿਛਲੀ", "gaye", "gaya", "गए", "poore", "pure", "पूरे"}) \
+    | set(WORDS) | set(MULT) | set(MODS)
+RECEIVED = {"mil", "mila", "mile", "मिल", "मिला", "मिले", "ਮਿਲ", "ਮਿਲੇ", "bheje", "bheja", "भेजे",
+            "भेजा", "ਭੇਜੇ", "aaye", "आए", "received", "got"}
+STOP |= RECEIVED
 
 
 @dataclass
@@ -170,6 +189,49 @@ def _tok(text: str) -> list[str]:
     return [t for t in re.split(r"[\s,.;:!?]+", _norm(text)) if t]
 
 
+# A name sits directly before a postposition/honorific (Ramesh ko, Gupta ji, ਰਮੇਸ਼ ਨੂੰ),
+# or directly after an English preposition (from Mohan, by Sita, to Arjun).
+POSTPOS = {"ko", "ne", "ka", "ki", "ke", "se", "ji", "bhai", "sahab", "ko.", "को", "ने", "का", "की",
+           "के", "से", "जी", "भाई", "ਨੂੰ", "ਨੇ", "ਦਾ", "ਦੀ", "ਦੇ", "ਤੋਂ", "ਜੀ", "ਭਾਈ"}
+PREPOS = {"from", "by", "to", "give", "for"}
+
+
+def _is_word(t: str, i: int, used: set[int]) -> bool:
+    return bool(t) and i not in used and t.lower() not in STOP and not re.search(r"\d", t) \
+        and not t.startswith("/")
+
+
+def _name_tokens(clean: list[str], used: set[int]) -> list[str]:
+    for i, t in enumerate(clean):
+        if t.lower() in POSTPOS:
+            j, run = i - 1, []
+            while j >= 0 and _is_word(clean[j], j, used) and len(run) < 3:
+                run.insert(0, clean[j]); j -= 1
+            if run:
+                return run
+    for i, t in enumerate(clean):
+        if t.lower() in PREPOS:
+            j, run = i + 1, []
+            while j < len(clean) and _is_word(clean[j], j, used) and len(run) < 3:
+                run.append(clean[j]); j += 1
+            if run:
+                return run
+    run: list[str] = []
+    for i, t in enumerate(clean):            # fallback: first contiguous run of non-keywords
+        if _is_word(t, i, used):
+            run.append(t)
+            if len(run) == 3:
+                break
+        elif run:
+            break
+    return run
+
+
+def _wants_undo(s: set[str]) -> bool:
+    return bool(s & {"delete", "remove", "hatao", "hata", "cancel", "हटाओ", "ਹਟਾਓ"}
+                and s & {"last", "pichhli", "pichli", "entry", "पिछली", "एंट्री", "ਪਿਛਲੀ", "ਐਂਟਰੀ"})
+
+
 def extract(text: str, today: date | None = None) -> Extraction:
     today = today or date.today()
     lang = detect_lang(text)
@@ -177,7 +239,7 @@ def extract(text: str, today: date | None = None) -> Extraction:
     low = [t.lower() for t in toks]
     s = set(low)
 
-    if s & {"undo", "galti", "गलती", "ਗਲਤੀ"} or (low[:1] and low[0] in {"delete", "remove", "hatao", "हटाओ", "ਹਟਾਓ"} and "last" in s):
+    if s & {"undo", "galti", "गलती", "ਗਲਤੀ"} or _wants_undo(s) or (low[:1] and low[0] in {"delete", "remove", "hatao", "हटाओ", "ਹਟਾਓ"} and "last" in s):
         return Extraction("undo", lang=lang)
     if low and low[0] in {"help", "madad", "मदद", "ਮਦਦ", "/help", "/start", "hi", "hello", "namaste", "नमस्ते"}:
         return Extraction("help", lang=lang)
@@ -185,16 +247,8 @@ def extract(text: str, today: date | None = None) -> Extraction:
     paise, used = parse_amount(text)
     ntok = [t for t in _norm(text).replace("₹", " ₹ ").split()]
     clean = [t.strip(PUNCT) for t in ntok]
-    # name = leftover tokens that are not keywords / numbers
-    name_toks = []
-    for i, t in enumerate(clean):
-        tl = t.lower()
-        if not t or i in used or tl in STOP or re.fullmatch(r"[\d,.]+", t):
-            continue
-        if tl in {"/list", "/balance", "/undo"}:
-            continue
-        name_toks.append(t)
-    customer = " ".join(name_toks[:3]).title() if name_toks else None
+    name_toks = _name_tokens(clean, used)
+    customer = " ".join(name_toks).title() if name_toks else None
     # latin names title-cased; native scripts untouched by title()
 
     # direction
@@ -212,7 +266,7 @@ def extract(text: str, today: date | None = None) -> Extraction:
     ne = bool(s & NE)
     ko = bool(s & KO)
     SETTLE = {"paid", "received", "jama", "जमा", "payment", "returned", "wapas", "vapas", "वापस",
-              "settled", "ਮੋੜੇ", "चुकाए", "chukaye"}
+              "settled", "ਮੋੜੇ", "चुकाए", "chukaye"} | RECEIVED
     if s & SETTLE:
         kind = "add_payment"
     elif s & CREDIT:

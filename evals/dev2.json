@@ -1,0 +1,17 @@
+[
+ {"text": "Vikram ko 450 ka saaman udhaar diya", "intent": "add_credit", "customer": "Vikram", "paise": 45000},
+ {"text": "Neha ne poore 1000 de diye", "intent": "add_payment", "customer": "Neha", "paise": 100000},
+ {"text": "Give Arjun 600 on credit", "intent": "add_credit", "customer": "Arjun", "paise": 60000},
+ {"text": "Arjun returned 250", "intent": "add_payment", "customer": "Arjun", "paise": 25000},
+ {"text": "सुनीता को तीन सौ का उधार", "intent": "add_credit", "customer": "सुनीता", "paise": 30000},
+ {"text": "सुनीता ने डेढ़ सौ दिए", "intent": "add_payment", "customer": "सुनीता", "paise": 15000},
+ {"text": "ਹਰਪ੍ਰੀਤ ਨੇ 700 ਮੋੜੇ", "intent": "add_payment", "customer": "ਹਰਪ੍ਰੀਤ", "paise": 70000},
+ {"text": "ਬਲਵਿੰਦਰ ਨੂੰ 1200 ਉਧਾਰ ਦਿੱਤਾ", "intent": "add_credit", "customer": "ਬਲਵਿੰਦਰ", "paise": 120000},
+ {"text": "Deepak ka 80 rupay baaki likh do", "intent": "add_credit", "customer": "Deepak", "paise": 8000},
+ {"text": "Deepak se 80 mil gaye", "intent": "add_payment", "customer": "Deepak", "paise": 8000},
+ {"text": "Sharma ji ko paune do sau udhaar", "intent": "add_credit", "customer": "Sharma", "paise": 17500},
+ {"text": "Meena ka balance batao", "intent": "balance", "customer": "Meena", "paise": null},
+ {"text": "pichhli entry hatao", "intent": "undo", "customer": null, "paise": null},
+ {"text": "Lalit ko 5 hazaar udhaar 10 din mein dega", "intent": "add_credit", "customer": "Lalit", "paise": 500000, "due_offset": 10},
+ {"text": "Rohit ne UPI se 320 bheje", "intent": "add_payment", "customer": "Rohit", "paise": 32000}
+]
