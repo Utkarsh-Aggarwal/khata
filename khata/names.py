@@ -30,11 +30,17 @@ def translit(s: str) -> str:
 
 
 def name_key(name: str) -> str:
-    """Phonetic skeleton: 'Ramesh' == 'रमेश' == 'ਰਮੇਸ਼' == 'Rameshh'."""
+    """Phonetic key: 'Ramesh' == 'रमेश' == 'ਰਮੇਸ਼' == 'Rameshh', but 'Mohan' != 'Mohini'.
+
+    Only 'a' is dropped, because Devanagari and Gurmukhi leave the inherent 'a' unwritten
+    (रमेश is r-m-e-sh). Other vowels are written in every script, so they are kept; long
+    and short forms are merged (Seeta == Sita).
+    """
     t = translit(name).lower()
     t = re.sub(r"[^a-z]", "", t)
     t = t.replace("w", "v").replace("z", "j").replace("ph", "f").replace("c", "k")
-    t = re.sub(r"[aeiouy]", "", t)       # drop vowels (schwa deletion makes them unreliable)
+    t = t.replace("ee", "i").replace("oo", "u").replace("ai", "e").replace("au", "o")
+    t = t.replace("a", "")               # inherent vowel: unreliable across scripts
     t = t.replace("h", "")               # drop aspiration
     t = re.sub(r"(.)\1+", r"\1", t)
     if not t:  # all-vowel names like "Asha"->"sh" are fine; "A"/"Ee" fall back to the vowels

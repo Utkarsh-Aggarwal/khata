@@ -43,7 +43,7 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
                wa_app_secret=None) -> FastAPI:
     app = FastAPI(title="Khata", version="0.3.0")
     ledger = Ledger(db_path or DB_PATH)
-    bot = Bot(ledger)
+    bot = Bot(ledger, base_url=os.environ.get("KHATA_PUBLIC_URL", "").rstrip("/"))
     guard = guard or PaidGuard()
     voice = VoicePipeline(guard, transcriber)
     bills = BillReader(guard, vision)

@@ -60,22 +60,39 @@ class Ledger:
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.RLock()
-        self.db.executescript(SCHEMA)
+        with self.lock:
+            self.db.executescript(SCHEMA)
+            self._rekey()
+
+    def _rekey(self) -> None:
+        """Recompute stored name keys so a change to name_key() can't orphan old customers.
+
+        Keys that would now collide (only possible if two rows already shared a key) are left as is.
+        """
+        for r in self.db.execute("SELECT id, name, key FROM customers").fetchall():
+            k = name_key(r["name"])
+            if k and k != r["key"]:
+                try:
+                    self.db.execute("UPDATE customers SET key=? WHERE id=?", (k, r["id"]))
+                except sqlite3.IntegrityError:
+                    pass
+        self.db.commit()
 
     # ---- customers -------------------------------------------------
     def _find(self, owner: str, name: str) -> sqlite3.Row | None:
         k = name_key(name)
         if not k:
             return None
-        r = self.db.execute(
-            "SELECT c.* FROM customers c WHERE c.owner=? AND c.key=?", (owner, k)
-        ).fetchone()
-        if r:
-            return r
-        return self.db.execute(
-            "SELECT c.* FROM aliases a JOIN customers c ON c.id=a.customer_id "
-            "WHERE a.owner=? AND a.alias_key=? AND c.owner=?", (owner, k, owner)
-        ).fetchone()
+        with self.lock:      # one shared connection: every statement runs under the lock
+            r = self.db.execute(
+                "SELECT c.* FROM customers c WHERE c.owner=? AND c.key=?", (owner, k)
+            ).fetchone()
+            if r:
+                return r
+            return self.db.execute(
+                "SELECT c.* FROM aliases a JOIN customers c ON c.id=a.customer_id "
+                "WHERE a.owner=? AND a.alias_key=? AND c.owner=?", (owner, k, owner)
+            ).fetchone()
 
     def find_customer(self, owner: str, name: str) -> str | None:
         with self.lock:
@@ -137,9 +154,10 @@ class Ledger:
             return self.get_entry(owner, r["id"])
 
     def get_entry(self, owner: str, entry_id: int) -> Entry | None:
-        r = self.db.execute(
-            "SELECT e.*, c.name AS cname FROM entries e JOIN customers c ON c.id=e.customer_id "
-            "WHERE e.owner=? AND e.id=?", (owner, entry_id)).fetchone()
+        with self.lock:
+            r = self.db.execute(
+                "SELECT e.*, c.name AS cname FROM entries e JOIN customers c ON c.id=e.customer_id "
+                "WHERE e.owner=? AND e.id=?", (owner, entry_id)).fetchone()
         return self._entry(r) if r else None
 
     @staticmethod

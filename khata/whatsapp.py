@@ -154,7 +154,7 @@ def make_router(bot, voice, client: WAClient | None = None, *, verify_token: str
         owner = owner_for(to, app_secret)
         try:
             if m["type"] in ("text", "interactive", "button"):
-                return reply(to, bot.handle(owner, m.get("text", "")[:1000]))
+                return reply(to, bot.handle(owner, m.get("text", "")[:1000], source="whatsapp"))
             if m["type"] == "audio":
                 from .voice import VoiceError
                 try:

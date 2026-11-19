@@ -77,7 +77,10 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const GHOST='<svg viewBox="0 0 64 72" aria-hidden="true"><path d="M8 66V30C8 14 20 4 32 4s24 10 24 26v36l-8-7-8 7-8-7-8 7-8-7z" fill="#e9e6f5"/><circle cx="24" cy="30" r="4" fill="#15121a"/><circle cx="40" cy="30" r="4" fill="#15121a"/><ellipse cx="32" cy="44" rx="5" ry="6" fill="#15121a"/></svg>';
 function add(cls,t){const d=document.createElement("div");d.className="m "+cls;d.textContent=t;$("log").append(d);$("log").scrollTop=1e9}
-async function api(p,o){const r=await fetch(p,o);if(r.status==401){await fetch("/api/demo-login",{method:"POST"});return api(p,o)}
+async function api(p,o,retried){const r=await fetch(p,o);
+  if(r.status==401&&!retried){const l=await fetch("/api/demo-login",{method:"POST"});
+    if(!l.ok)return {reply:"Couldn't start a demo session (error "+l.status+"). Please try again later.",buttons:[],customers:[],entries:[],total_due:"₹0"};
+    return api(p,o,true)}
   if(!r.ok){return {reply:"Error "+r.status+" (rate limit or bad input)",buttons:[]}}return r.json()}
 async function refresh(){
   const d=await api("/api/ledger");
@@ -97,19 +100,20 @@ $("mic").onclick=async()=>{
   if(!navigator.mediaDevices||!window.MediaRecorder){add("bot","This browser can't record audio. Please type.");return}
   let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:true})}catch(e){add("bot","Microphone permission denied.");return}
   const chunks=[];rec=new MediaRecorder(stream);rec.ondataavailable=e=>chunks.push(e.data);
-  rec.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());rec=null;$("mic").textContent="🎙️";$("mic").setAttribute("aria-pressed","false");
-    const fd=new FormData();fd.append("file",new Blob(chunks,{type:"audio/webm"}),"note.webm");add("me","🎙️ voice note");
-    const r=await fetch("/api/voice",{method:"POST",body:fd});const j=r.ok?await r.json():{reply:"Error "+r.status,buttons:[]};
+  rec.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());const mime=rec.mimeType||"audio/webm";rec=null;
+    $("mic").textContent="🎙️";$("mic").setAttribute("aria-pressed","false");
+    const ext=mime.includes("mp4")?"m4a":mime.includes("ogg")?"ogg":"webm";   // Safari records mp4
+    const fd=new FormData();fd.append("file",new Blob(chunks,{type:mime}),"note."+ext);add("me","🎙️ voice note");
+    const j=await api("/api/voice",{method:"POST",body:fd});
     if(j.transcript)add("bot","Heard: “"+j.transcript+"”");show(j)};
   rec.start();$("mic").textContent="⏹️";$("mic").setAttribute("aria-pressed","true")};
 $("bill").onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.value="";add("me","🧾 "+f.name);
-  const fd=new FormData();fd.append("file",f);const r=await fetch("/api/bill",{method:"POST",body:fd});
-  show(r.ok?await r.json():{reply:"Error "+r.status,buttons:[]})};
+  const fd=new FormData();fd.append("file",f);show(await api("/api/bill",{method:"POST",body:fd}))};
 $("sample").onclick=async()=>{const d=document.createElement("div");d.className="m me";
   d.innerHTML='<img src="/static/sample-bill.svg" alt="Sample bill: Sharma Kirana Store, total ₹846.50" width="140">';$("log").append(d);
   show(await api("/api/bill/sample",{method:"POST"}))};
 $("del").onclick=async()=>{if(confirm("Delete all your data?")){await fetch("/api/data",{method:"DELETE"});add("bot","All your data was deleted.");refresh()}};
-(async()=>{await fetch("/api/demo-login",{method:"POST"});
+(async()=>{   // no login here: api() logs in only when the cookie is missing, so a refresh keeps your data
   const h=await (await fetch("/health")).json();$("mode").textContent=h.mode==="demo"?"· demo mode (paid APIs off)":"· live";
   add("bot","Namaste! Try: 'Ramesh ko 500 udhaar', 'Sita ne 200 diye', 'Ramesh ka kitna baaki', 'undo'.");refresh()})();
 </script>

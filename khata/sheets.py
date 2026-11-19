@@ -75,7 +75,8 @@ class SheetMirror:
             ledger.db.executescript(SCHEMA)
 
     def _state(self) -> dict[int, dict]:
-        rows = self.ledger.db.execute("SELECT * FROM sheet_sync WHERE owner=?", (self.owner,))
+        with self.ledger.lock:
+            rows = self.ledger.db.execute("SELECT * FROM sheet_sync WHERE owner=?", (self.owner,)).fetchall()
         return {r["entry_id"]: dict(r) for r in rows}
 
     def pending(self) -> int:

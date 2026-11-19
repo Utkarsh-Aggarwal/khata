@@ -6,6 +6,7 @@ from datetime import date
 
 from .extract import Extraction, extract, parse_amount
 from .ledger import Ledger, format_rupees
+from .names import name_key
 
 YES = {"haan", "han", "ha", "yes", "y", "ok", "okay", "confirm", "sahi", "theek", "thik", "हाँ", "हां",
        "हा", "सही", "ठीक", "ਹਾਂ", "ਠੀਕ", "✅", "1", "yes.", "save"}
@@ -24,6 +25,12 @@ M = {
               "pa": "ਸੇਵ ਹੋ ਗਿਆ। {name} ਤੇ ਹੁਣ {bal} ਬਾਕੀ।"},
     "cancelled": {"en": "Cancelled. Nothing saved.", "hi": "रद्द किया। कुछ सेव नहीं हुआ।",
                   "pa": "ਰੱਦ ਕੀਤਾ। ਕੁਝ ਸੇਵ ਨਹੀਂ ਹੋਇਆ।"},
+    "discarded": {"en": "(The unsaved entry was discarded.)", "hi": "(बिना सेव की एंट्री हटा दी गई।)",
+                  "pa": "(ਬਿਨਾਂ ਸੇਵ ਕੀਤੀ ਐਂਟਰੀ ਹਟਾ ਦਿੱਤੀ ਗਈ।)"},
+    "export": {"en": "Download your khata as Excel: {url}", "hi": "अपना खाता Excel में डाउनलोड करें: {url}",
+               "pa": "ਆਪਣਾ ਖਾਤਾ Excel ਵਿੱਚ ਡਾਊਨਲੋਡ ਕਰੋ: {url}"},
+    "export_wa": {"en": "Excel export is available in the web app.", "hi": "Excel एक्सपोर्ट वेब ऐप में है।",
+                  "pa": "Excel ਐਕਸਪੋਰਟ ਵੈੱਬ ਐਪ ਵਿੱਚ ਹੈ।"},
     "ask_customer": {"en": "Who is the customer?", "hi": "ग्राहक कौन है?", "pa": "ਗਾਹਕ ਕੌਣ ਹੈ?"},
     "ask_amount": {"en": "How much (₹)?", "hi": "कितने रुपये?", "pa": "ਕਿੰਨੇ ਰੁਪਏ?"},
     "ask_kind": {"en": "Is this credit (udhaar given) or a payment received? Reply: credit / payment.",
@@ -58,6 +65,7 @@ class Pending:
 class Bot:
     ledger: Ledger
     pending: dict[str, Pending] = field(default_factory=dict)
+    base_url: str = ""
 
     def say(self, key: str, lang: str, **kw) -> str:
         return M[key][L(lang)].format(**kw)
@@ -66,18 +74,27 @@ class Bot:
         text = (text or "").strip()
         if not text:
             return {"reply": self.say("help", "en"), "buttons": []}
-        p = self.pending.get(owner)
-        if p:
-            r = self._continue(owner, p, text)
-            if r is not None:
+        with self.ledger.lock:    # web threads and WhatsApp background tasks share `pending`
+            p = self.pending.get(owner)
+            if p:
+                r = self._continue(owner, p, text)
+                if r is not None:
+                    return r
+                # Unrelated message: drop the unsaved entry so a later "yes" can't save it by surprise.
+                self.pending.pop(owner, None)
+                r = self._fresh(owner, text, source, today)
+                r["reply"] = self.say("discarded", p.ex.lang) + "\n" + r["reply"]
                 return r
-        return self._fresh(owner, text, source, today)
+            return self._fresh(owner, text, source, today)
 
     # ------------------------------------------------------------
     def _fresh(self, owner, text, source, today):
         low = text.lower().strip()
-        if low in ("export", "/export", "एक्सपोर्ट"):
-            return {"reply": "Download: /api/export.xlsx", "buttons": [], "export": True}
+        if low in ("export", "/export", "एक्सपोर्ट", "ਐਕਸਪੋਰਟ"):
+            lang = extract(text).lang
+            if source == "whatsapp":
+                return self._r(self.say("export_wa", lang))
+            return self._r(self.say("export", lang, url=self.base_url + "/api/export.xlsx"), export=True)
         ex = extract(text, today)
         lang = ex.lang
         if ex.intent == "help":
@@ -144,9 +161,12 @@ class Bot:
             del self.pending[owner]
             return self._r(self.say("cancelled", lang))
         if p.awaiting == "customer":
-            if extract(text).intent in ("undo",):
+            if extract(text).intent in ("undo", "help", "list", "balance") or low in ("export", "/export"):
                 return None
-            ex.customer = text.strip().title()
+            name = " ".join(text.split())[:40]
+            if not name_key(name):
+                return self._r(self.say("ask_customer", lang))
+            ex.customer = name.title()
             real = self.ledger.find_customer(owner, ex.customer)
             ex.customer = real or ex.customer
             return self._advance(owner, p)
@@ -176,9 +196,13 @@ class Bot:
             return self._r(self.say("saved", lang, name=ex.customer, bal=format_rupees(bal)),
                            changed=True, entry_id=e_id)
         amt, _ = parse_amount(text)
-        if amt is not None and len(low.split()) <= 4:    # edit amount
-            ex.paise = amt
-            return self._advance(owner, p)
+        if amt is not None and len(low.split()) <= 4:    # edit amount, unless it names someone else
+            other = extract(text).customer
+            if other is None or self.ledger.find_customer(owner, other) == ex.customer \
+                    or name_key(other) == name_key(ex.customer):
+                ex.paise = amt
+                return self._advance(owner, p)
+            return None
         if low in ("credit", "udhaar", "उधार") or low in PAY_W:
             ex.intent = "add_credit" if low in ("credit", "udhaar", "उधार") else "add_payment"
             return self._advance(owner, p)
