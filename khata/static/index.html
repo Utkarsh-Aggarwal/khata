@@ -53,6 +53,11 @@ td,th{padding:3px 4px;border-bottom:1px dotted #0004;text-align:left}
     <div id="log" role="log" aria-live="polite"></div>
     <div class="quick" id="quick"></div>
     <form id="f"><input id="t" autocomplete="off" aria-label="Message" placeholder="Ramesh ko 500 udhaar  /  रमेश ने 200 दिए  /  ਸੀਤਾ ਨੂੰ 300 ਉਧਾਰ"><button type="button" class="alt" id="mic" aria-label="Record voice note" aria-pressed="false">🎙️</button><button>Send</button></form>
+    <div class="quick">
+      <label class="alt" style="border:2px solid var(--ink);padding:8px 12px;border-radius:4px;cursor:pointer">🧾 Bill photo
+        <input type="file" id="bill" accept="image/jpeg,image/png,image/webp" capture="environment" style="position:absolute;opacity:0;width:1px;height:1px"></label>
+      <button type="button" class="alt" id="sample" title="Uses a pre-read sample bill; works with paid APIs off">🧾 Try sample bill</button>
+    </div>
     <p class="note">Every entry asks you to confirm before it is saved. Demo data is private to this browser.</p>
   </section>
   <section aria-label="Dues">
@@ -97,6 +102,12 @@ $("mic").onclick=async()=>{
     const r=await fetch("/api/voice",{method:"POST",body:fd});const j=r.ok?await r.json():{reply:"Error "+r.status,buttons:[]};
     if(j.transcript)add("bot","Heard: “"+j.transcript+"”");show(j)};
   rec.start();$("mic").textContent="⏹️";$("mic").setAttribute("aria-pressed","true")};
+$("bill").onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.value="";add("me","🧾 "+f.name);
+  const fd=new FormData();fd.append("file",f);const r=await fetch("/api/bill",{method:"POST",body:fd});
+  show(r.ok?await r.json():{reply:"Error "+r.status,buttons:[]})};
+$("sample").onclick=async()=>{const d=document.createElement("div");d.className="m me";
+  d.innerHTML='<img src="/static/sample-bill.svg" alt="Sample bill: Sharma Kirana Store, total ₹846.50" width="140">';$("log").append(d);
+  show(await api("/api/bill/sample",{method:"POST"}))};
 $("del").onclick=async()=>{if(confirm("Delete all your data?")){await fetch("/api/data",{method:"DELETE"});add("bot","All your data was deleted.");refresh()}};
 (async()=>{await fetch("/api/demo-login",{method:"POST"});
   const h=await (await fetch("/health")).json();$("mode").textContent=h.mode==="demo"?"· demo mode (paid APIs off)":"· live";

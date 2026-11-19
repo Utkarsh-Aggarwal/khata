@@ -11,9 +11,12 @@ from urllib.parse import quote
 
 from fastapi import Cookie, FastAPI, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .bills import MAX_IMAGE as BILL_MAX, SAMPLE_BILL, BillError, BillReader, intro, to_extraction
 from .flow import Bot
+from .whatsapp import make_router
 from .guard import PaidGuard
 from .ledger import Ledger, format_rupees
 from .voice import MAX_BYTES, VoiceError, VoicePipeline
@@ -34,13 +37,28 @@ class Msg(BaseModel):
 
 
 def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
-               transcriber=None) -> FastAPI:
-    app = FastAPI(title="Khata", version="0.2.0")
+               transcriber=None, vision=None, wa_client=None, wa_verify_token=None,
+               wa_app_secret=None) -> FastAPI:
+    app = FastAPI(title="Khata", version="0.3.0")
     ledger = Ledger(db_path or DB_PATH)
     bot = Bot(ledger)
     guard = guard or PaidGuard()
     voice = VoicePipeline(guard, transcriber)
-    app.state.bot, app.state.guard, app.state.voice = bot, guard, voice
+    bills = BillReader(guard, vision)
+    app.state.bot, app.state.guard, app.state.voice, app.state.ledger = bot, guard, voice, ledger
+
+    def bill_reply(owner: str, f) -> dict:
+        r = bot.start_from_extraction(owner, to_extraction(f), "bill")
+        return {**r, "reply": intro(f) + "\n" + r["reply"]}
+
+    def on_image(owner: str, image: bytes, mime: str) -> dict:
+        try:
+            return bill_reply(owner, bills.read(image, mime))
+        except BillError as e:
+            return {"reply": str(e), "buttons": []}
+
+    app.include_router(make_router(bot, voice, wa_client, verify_token=wa_verify_token,
+                                   app_secret=wa_app_secret, on_image=on_image))
     hits: dict[str, deque] = defaultdict(deque)
 
     def owner_of(sid: str | None) -> str:
@@ -59,6 +77,8 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
     @app.get("/health")
     def health():
         return {"ok": True, "mode": "live" if guard.on else "demo", **guard.status()}
+
+    app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     @app.get("/")
     def index():
@@ -93,6 +113,20 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
             return {"reply": str(e), "buttons": [], "transcript": None}
         r = bot.handle(o, text, source="voice")
         return {**r, "transcript": text}
+
+    @app.post("/api/bill")
+    async def bill_photo(file: UploadFile, sid: str | None = Cookie(None)):
+        o = owner_of(sid)
+        limit(o)
+        return on_image(o, await file.read(BILL_MAX + 1), file.content_type or "")
+
+    @app.post("/api/bill/sample")
+    def bill_sample(sid: str | None = Cookie(None)):
+        """Demo-mode path: canned fields for the bundled sample bill image (no paid API)."""
+        o = owner_of(sid)
+        limit(o)
+        r = bill_reply(o, SAMPLE_BILL)
+        return {**r, "reply": "(sample bill, pre-read) " + r["reply"]}
 
     @app.get("/api/ledger")
     def get_ledger(sid: str | None = Cookie(None)):
