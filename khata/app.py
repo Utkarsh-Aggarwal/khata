@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Cookie, FastAPI, HTTPException, Response, UploadFile
+from fastapi import Cookie, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -25,6 +25,7 @@ from .voice import MAX_BYTES, VoiceError, VoicePipeline
 STATIC = Path(__file__).parent / "static"
 DB_PATH = os.environ.get("KHATA_DB", "khata.db")
 RATE_PER_MIN = int(os.environ.get("KHATA_RATE_PER_MIN", "30"))
+LOGINS_PER_HOUR = int(os.environ.get("KHATA_LOGINS_PER_HOUR", "20"))
 
 SEED = [
     "Ramesh ko 1200 udhaar", "haan", "Sita ne 300 diye", "haan",
@@ -69,6 +70,7 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
     app.include_router(make_router(bot, voice, wa_client, verify_token=wa_verify_token,
                                    app_secret=wa_app_secret, on_image=on_image))
     hits: dict[str, deque] = defaultdict(deque)
+    logins: dict[str, deque] = defaultdict(deque)
 
     def owner_of(sid: str | None) -> str:
         if not sid or not sid.startswith("demo-") or len(sid) < 20:
@@ -95,7 +97,16 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
         return FileResponse(STATIC / "index.html")
 
     @app.post("/api/demo-login")
-    def demo_login(response: Response, seed: bool = True):
+    def demo_login(request: Request, response: Response, seed: bool = True):
+        hdr = os.environ.get("KHATA_CLIENT_IP_HEADER")       # e.g. fly-client-ip, only behind that proxy
+        ip = (request.headers.get(hdr) if hdr else None) or (request.client.host if request.client else "?")
+        q, now = logins[ip], time.time()
+        while q and now - q[0] > 3600:
+            q.popleft()
+        if len(q) >= LOGINS_PER_HOUR:
+            raise HTTPException(429, "too many demo logins from this network; try later")
+        q.append(now)
+        ledger.purge_demo_owners(older_than_days=7)
         sid = "demo-" + secrets.token_urlsafe(18)
         if seed:
             for line in SEED:

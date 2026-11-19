@@ -5,7 +5,7 @@ import re
 import sqlite3
 import threading
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from .names import name_key
 
@@ -194,6 +194,17 @@ class Ledger:
         return [e for e in self.entries(owner)
                 if e.kind == "credit" and e.due_date and e.due_date < today
                 and self.balance(owner, e.customer) > 0]
+
+    def purge_demo_owners(self, older_than_days: int = 7) -> int:
+        """Delete demo accounts whose newest entry is older than the cutoff. Never touches wa- owners."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=older_than_days)).isoformat()
+        with self.lock:
+            old = [r["owner"] for r in self.db.execute(
+                "SELECT owner FROM entries WHERE owner LIKE 'demo-%' GROUP BY owner "
+                "HAVING MAX(created_at) < ?", (cutoff,))]
+            for o in old:
+                self.delete_owner_data(o)
+            return len(old)
 
     # ---- privacy ---------------------------------------------------
     def delete_owner_data(self, owner: str) -> None:
