@@ -114,10 +114,11 @@ def test_confirm_required_and_cancel():
 def test_asks_for_missing_parts():
     lg = Ledger()
     b = Bot(lg)
-    assert "customer" in b.handle("o", "500 udhaar")["reply"].lower() or True
-    b.handle("o", "Sita")
+    assert b.handle("o", "500 udhaar")["reply"] == "ग्राहक कौन है?"
+    assert b.handle("o", "Sita")["buttons"] == ["yes", "no"]
     assert lg.entries("o") == []
-    assert b.handle("o", "yes")["reply"]
+    b.handle("o", "yes")
+    assert lg.balance("o", "Sita") == 50000
 
 
 def test_web_flow_and_isolation():
