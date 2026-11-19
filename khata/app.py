@@ -9,18 +9,18 @@ from collections import defaultdict, deque
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Cookie, FastAPI, HTTPException, Response
+from fastapi import Cookie, FastAPI, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .flow import Bot
+from .guard import PaidGuard
 from .ledger import Ledger, format_rupees
+from .voice import MAX_BYTES, VoiceError, VoicePipeline
 
 STATIC = Path(__file__).parent / "static"
 DB_PATH = os.environ.get("KHATA_DB", "khata.db")
 RATE_PER_MIN = int(os.environ.get("KHATA_RATE_PER_MIN", "30"))
-# Paid APIs (voice / vision) are off unless a key is set and the kill switch is not thrown.
-PAID_APIS_ON = bool(os.environ.get("KHATA_PAID_KEY")) and os.environ.get("KHATA_KILL") != "1"
 
 SEED = [
     "Ramesh ko 1200 udhaar", "haan", "Sita ne 300 diye", "haan",
@@ -33,10 +33,14 @@ class Msg(BaseModel):
     text: str
 
 
-def create_app(db_path: str | None = None) -> FastAPI:
-    app = FastAPI(title="Khata", version="0.1.0")
+def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
+               transcriber=None) -> FastAPI:
+    app = FastAPI(title="Khata", version="0.2.0")
     ledger = Ledger(db_path or DB_PATH)
     bot = Bot(ledger)
+    guard = guard or PaidGuard()
+    voice = VoicePipeline(guard, transcriber)
+    app.state.bot, app.state.guard, app.state.voice = bot, guard, voice
     hits: dict[str, deque] = defaultdict(deque)
 
     def owner_of(sid: str | None) -> str:
@@ -54,7 +58,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"ok": True, "mode": "live" if PAID_APIS_ON else "demo", "paid_apis": PAID_APIS_ON}
+        return {"ok": True, "mode": "live" if guard.on else "demo", **guard.status()}
 
     @app.get("/")
     def index():
@@ -76,6 +80,19 @@ def create_app(db_path: str | None = None) -> FastAPI:
         if len(m.text) > 1000:
             raise HTTPException(413, "message too long")
         return bot.handle(o, m.text)
+
+    @app.post("/api/voice")
+    async def voice_note(file: UploadFile, sid: str | None = Cookie(None)):
+        o = owner_of(sid)
+        limit(o)
+        audio = await file.read(MAX_BYTES + 1)
+        suffix = Path(file.filename or "").suffix.lower() or ".webm"
+        try:
+            text = voice.transcribe(audio, suffix)
+        except VoiceError as e:
+            return {"reply": str(e), "buttons": [], "transcript": None}
+        r = bot.handle(o, text, source="voice")
+        return {**r, "transcript": text}
 
     @app.get("/api/ledger")
     def get_ledger(sid: str | None = Cookie(None)):

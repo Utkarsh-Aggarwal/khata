@@ -52,7 +52,7 @@ td,th{padding:3px 4px;border-bottom:1px dotted #0004;text-align:left}
     <h2>Chat with your khata</h2>
     <div id="log" role="log" aria-live="polite"></div>
     <div class="quick" id="quick"></div>
-    <form id="f"><input id="t" autocomplete="off" aria-label="Message" placeholder="Ramesh ko 500 udhaar  /  रमेश ने 200 दिए  /  ਸੀਤਾ ਨੂੰ 300 ਉਧਾਰ"><button>Send</button></form>
+    <form id="f"><input id="t" autocomplete="off" aria-label="Message" placeholder="Ramesh ko 500 udhaar  /  रमेश ने 200 दिए  /  ਸੀਤਾ ਨੂੰ 300 ਉਧਾਰ"><button type="button" class="alt" id="mic" aria-label="Record voice note" aria-pressed="false">🎙️</button><button>Send</button></form>
     <p class="note">Every entry asks you to confirm before it is saved. Demo data is private to this browser.</p>
   </section>
   <section aria-label="Dues">
@@ -86,6 +86,17 @@ function show(r){add("bot",r.reply);$("quick").innerHTML="";
   refresh()}
 async function send(t){add("me",t);show(await api("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})}))}
 $("f").onsubmit=e=>{e.preventDefault();const v=$("t").value.trim();if(v){$("t").value="";send(v)}};
+let rec=null;
+$("mic").onclick=async()=>{
+  if(rec){rec.stop();return}
+  if(!navigator.mediaDevices||!window.MediaRecorder){add("bot","This browser can't record audio. Please type.");return}
+  let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:true})}catch(e){add("bot","Microphone permission denied.");return}
+  const chunks=[];rec=new MediaRecorder(stream);rec.ondataavailable=e=>chunks.push(e.data);
+  rec.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());rec=null;$("mic").textContent="🎙️";$("mic").setAttribute("aria-pressed","false");
+    const fd=new FormData();fd.append("file",new Blob(chunks,{type:"audio/webm"}),"note.webm");add("me","🎙️ voice note");
+    const r=await fetch("/api/voice",{method:"POST",body:fd});const j=r.ok?await r.json():{reply:"Error "+r.status,buttons:[]};
+    if(j.transcript)add("bot","Heard: “"+j.transcript+"”");show(j)};
+  rec.start();$("mic").textContent="⏹️";$("mic").setAttribute("aria-pressed","true")};
 $("del").onclick=async()=>{if(confirm("Delete all your data?")){await fetch("/api/data",{method:"DELETE"});add("bot","All your data was deleted.");refresh()}};
 (async()=>{await fetch("/api/demo-login",{method:"POST"});
   const h=await (await fetch("/health")).json();$("mode").textContent=h.mode==="demo"?"· demo mode (paid APIs off)":"· live";
