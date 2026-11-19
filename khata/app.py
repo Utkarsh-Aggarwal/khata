@@ -16,7 +16,8 @@ from pydantic import BaseModel
 
 from .bills import MAX_IMAGE as BILL_MAX, SAMPLE_BILL, BillError, BillReader, intro, to_extraction
 from .flow import Bot
-from .whatsapp import make_router
+from .sheets import from_env as sheet_from_env
+from .whatsapp import make_router, owner_for
 from .guard import PaidGuard
 from .ledger import Ledger, format_rupees
 from .voice import MAX_BYTES, VoiceError, VoicePipeline
@@ -57,6 +58,14 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
         except BillError as e:
             return {"reply": str(e), "buttons": []}
 
+    # Sheet mirror for the demo shopkeeper's WhatsApp number (env-configured; off by default).
+    sheet_num = os.environ.get("KHATA_SHEET_OWNER_NUMBER")
+    mirror = sheet_from_env(ledger, owner_for(sheet_num, wa_app_secret or os.environ.get("WA_APP_SECRET", ""))
+                            if sheet_num else None)
+    app.state.mirror = mirror
+    if mirror:
+        mirror.start()
+
     app.include_router(make_router(bot, voice, wa_client, verify_token=wa_verify_token,
                                    app_secret=wa_app_secret, on_image=on_image))
     hits: dict[str, deque] = defaultdict(deque)
@@ -76,7 +85,8 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
 
     @app.get("/health")
     def health():
-        return {"ok": True, "mode": "live" if guard.on else "demo", **guard.status()}
+        sheet = {"sheet_pending": mirror.pending()} if mirror else {"sheet": "off"}
+        return {"ok": True, "mode": "live" if guard.on else "demo", **guard.status(), **sheet}
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
