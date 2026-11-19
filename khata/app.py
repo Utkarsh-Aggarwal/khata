@@ -1,0 +1,122 @@
+"""FastAPI app: web chat, ledger views, export, demo login, health."""
+from __future__ import annotations
+
+import io
+import os
+import secrets
+import time
+from collections import defaultdict, deque
+from pathlib import Path
+from urllib.parse import quote
+
+from fastapi import Cookie, FastAPI, HTTPException, Response
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
+
+from .flow import Bot
+from .ledger import Ledger, format_rupees
+
+STATIC = Path(__file__).parent / "static"
+DB_PATH = os.environ.get("KHATA_DB", "khata.db")
+RATE_PER_MIN = int(os.environ.get("KHATA_RATE_PER_MIN", "30"))
+# Paid APIs (voice / vision) are off unless a key is set and the kill switch is not thrown.
+PAID_APIS_ON = bool(os.environ.get("KHATA_PAID_KEY")) and os.environ.get("KHATA_KILL") != "1"
+
+SEED = [
+    "Ramesh ko 1200 udhaar", "haan", "Sita ne 300 diye", "haan",
+    "Sita ko 800 udhaar", "haan", "रमेश को पाँच सौ रुपये उधार", "हाँ",
+    "Gupta ji ko dhai hazaar udhaar kal dunga", "haan",
+]
+
+
+class Msg(BaseModel):
+    text: str
+
+
+def create_app(db_path: str | None = None) -> FastAPI:
+    app = FastAPI(title="Khata", version="0.1.0")
+    ledger = Ledger(db_path or DB_PATH)
+    bot = Bot(ledger)
+    hits: dict[str, deque] = defaultdict(deque)
+
+    def owner_of(sid: str | None) -> str:
+        if not sid or not sid.startswith("demo-") or len(sid) < 20:
+            raise HTTPException(401, "login first")
+        return sid
+
+    def limit(owner: str) -> None:
+        q, now = hits[owner], time.time()
+        while q and now - q[0] > 60:
+            q.popleft()
+        if len(q) >= RATE_PER_MIN:
+            raise HTTPException(429, "slow down")
+        q.append(now)
+
+    @app.get("/health")
+    def health():
+        return {"ok": True, "mode": "live" if PAID_APIS_ON else "demo", "paid_apis": PAID_APIS_ON}
+
+    @app.get("/")
+    def index():
+        return FileResponse(STATIC / "index.html")
+
+    @app.post("/api/demo-login")
+    def demo_login(response: Response, seed: bool = True):
+        sid = "demo-" + secrets.token_urlsafe(18)
+        if seed:
+            for line in SEED:
+                bot.handle(sid, line)
+        response.set_cookie("sid", sid, httponly=True, samesite="lax", max_age=86400 * 7)
+        return {"ok": True}
+
+    @app.post("/api/chat")
+    def chat(m: Msg, sid: str | None = Cookie(None)):
+        o = owner_of(sid)
+        limit(o)
+        if len(m.text) > 1000:
+            raise HTTPException(413, "message too long")
+        return bot.handle(o, m.text)
+
+    @app.get("/api/ledger")
+    def get_ledger(sid: str | None = Cookie(None)):
+        o = owner_of(sid)
+        bal = ledger.balances(o)
+        overdue = {e.customer for e in ledger.overdue(o)}
+        return {
+            "total_due": format_rupees(ledger.total_due(o)),
+            "customers": [
+                {"name": n, "paise": v, "balance": format_rupees(v), "overdue": n in overdue,
+                 "wa": "https://wa.me/?text=" + quote(
+                     f"Namaste {n} ji, aapka {format_rupees(v)} baaki hai. Kripya jaldi chuka dein. 🙏")
+                 if v > 0 else None}
+                for n, v in bal.items() if v != 0],
+            "entries": [e.__dict__ for e in ledger.entries(o, include_cancelled=True)][::-1][:50],
+        }
+
+    @app.get("/api/export.xlsx")
+    def export(sid: str | None = Cookie(None)):
+        from openpyxl import Workbook
+        o = owner_of(sid)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Khata"
+        ws.append(["id", "customer", "kind", "rupees", "date", "due", "status"])
+        for e in ledger.entries(o, include_cancelled=True):
+            ws.append([e.id, e.customer, e.kind, e.paise / 100, e.entry_date, e.due_date, e.status])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                 headers={"Content-Disposition": "attachment; filename=khata.xlsx"})
+
+    @app.delete("/api/data")
+    def delete_data(response: Response, sid: str | None = Cookie(None)):
+        o = owner_of(sid)
+        ledger.delete_owner_data(o)
+        bot.pending.pop(o, None)
+        return {"deleted": True}
+
+    return app
+
+
+app = create_app()

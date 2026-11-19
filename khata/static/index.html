@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Khata: a paper ledger haunted by ghosts that collect the dues</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Gurmukhi:wght@400;700&family=Special+Elite&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#f3e7c9;--ink:#2a1e12;--blood:#8c1d1d;--moss:#2f5d3a;--night:#15121a;--ghost:#e9e6f5}
+*{box-sizing:border-box}
+body{margin:0;background:var(--night);color:var(--ink);font:16px/1.5 "Noto Sans Devanagari","Noto Sans Gurmukhi","Special Elite",system-ui,sans-serif}
+header{padding:14px 20px;color:var(--ghost);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+header h1{margin:0;font:28px "Special Elite",serif}
+header small{opacity:.85}
+main{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 16px 16px;max-width:1100px;margin:auto}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+section{background:var(--paper);border-radius:6px;padding:14px;box-shadow:0 0 0 3px #0003 inset;background-image:repeating-linear-gradient(transparent 0 27px,#8a6d3b33 27px 28px)}
+h2{margin:0 0 8px;font:20px "Special Elite",serif;color:var(--blood)}
+#log{height:330px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.m{padding:6px 10px;border-radius:8px;max-width:88%;white-space:pre-wrap}
+.me{align-self:flex-end;background:#fff8;border:1px solid #0002}
+.bot{align-self:flex-start;background:#2a1e1214;border:1px solid #0002}
+form{display:flex;gap:6px;margin-top:8px}
+input{flex:1;padding:10px;border:2px solid var(--ink);background:#fffdf5;font:inherit;border-radius:4px}
+button{font:inherit;padding:8px 12px;border:2px solid var(--ink);background:var(--ink);color:var(--paper);border-radius:4px;cursor:pointer}
+button.alt{background:transparent;color:var(--ink)}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(--blood);outline-offset:2px}
+.quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.ghosts{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+.ghost{background:#15121a;color:var(--ghost);border-radius:8px;padding:8px;text-align:center;text-decoration:none;display:block}
+.ghost svg{width:64px;height:72px;animation:float 3s ease-in-out infinite}
+.ghost.over svg path{fill:#f6c7c7}
+@keyframes float{50%{transform:translateY(-6px)}}
+@media(prefers-reduced-motion:reduce){.ghost svg{animation:none}}
+.amt{font:18px "Special Elite";display:block}
+.tag{font-size:12px;color:#f6c7c7}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:3px 4px;border-bottom:1px dotted #0004;text-align:left}
+.cancelled{text-decoration:line-through;opacity:.55}
+#total{font:22px "Special Elite"}
+.note{font-size:13px;opacity:.8}
+</style>
+</head>
+<body>
+<header>
+  <h1>📒 Khata <span aria-hidden="true">👻</span></h1>
+  <small>A paper khata stitched to voice, vision and chat. Ghosts collect the dues.
+  <span id="mode"></span></small>
+</header>
+<main>
+  <section aria-label="Chat">
+    <h2>Chat with your khata</h2>
+    <div id="log" role="log" aria-live="polite"></div>
+    <div class="quick" id="quick"></div>
+    <form id="f"><input id="t" autocomplete="off" aria-label="Message" placeholder="Ramesh ko 500 udhaar  /  रमेश ने 200 दिए  /  ਸੀਤਾ ਨੂੰ 300 ਉਧਾਰ"><button>Send</button></form>
+    <p class="note">Every entry asks you to confirm before it is saved. Demo data is private to this browser.</p>
+  </section>
+  <section aria-label="Dues">
+    <h2>Ghosts of dues past</h2>
+    <div>Total due: <span id="total">₹0</span></div>
+    <div class="ghosts" id="ghosts"></div>
+    <h2 style="margin-top:14px">Ledger</h2>
+    <table><thead><tr><th>Who</th><th>Kind</th><th>₹</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
+    <div class="quick">
+      <a href="/api/export.xlsx"><button class="alt" type="button">Export .xlsx</button></a>
+      <button class="alt" type="button" id="del">Delete my data</button>
+    </div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const GHOST='<svg viewBox="0 0 64 72" aria-hidden="true"><path d="M8 66V30C8 14 20 4 32 4s24 10 24 26v36l-8-7-8 7-8-7-8 7-8-7z" fill="#e9e6f5"/><circle cx="24" cy="30" r="4" fill="#15121a"/><circle cx="40" cy="30" r="4" fill="#15121a"/><ellipse cx="32" cy="44" rx="5" ry="6" fill="#15121a"/></svg>';
+function add(cls,t){const d=document.createElement("div");d.className="m "+cls;d.textContent=t;$("log").append(d);$("log").scrollTop=1e9}
+async function api(p,o){const r=await fetch(p,o);if(r.status==401){await fetch("/api/demo-login",{method:"POST"});return api(p,o)}
+  if(!r.ok){return {reply:"Error "+r.status+" (rate limit or bad input)",buttons:[]}}return r.json()}
+async function refresh(){
+  const d=await api("/api/ledger");
+  $("total").textContent=d.total_due;
+  $("ghosts").innerHTML=d.customers.filter(c=>c.paise>0).map(c=>
+    `<a class="ghost ${c.overdue?"over":""}" href="${esc(c.wa)}" target="_blank" rel="noopener" aria-label="Send reminder to ${esc(c.name)}, owes ${esc(c.balance)}">${GHOST}<b>${esc(c.name)}</b><span class="amt">${esc(c.balance)}</span>${c.overdue?'<span class="tag">overdue</span>':'<span class="tag">tap to summon</span>'}</a>`).join("")||"<p>No dues. The ghosts rest.</p>";
+  $("rows").innerHTML=d.entries.slice(0,12).map(e=>`<tr class="${e.status}"><td>${esc(e.customer)}</td><td>${esc(e.kind)}</td><td>${(e.paise/100).toLocaleString("en-IN")}</td><td>${esc(e.status)}</td></tr>`).join("");
+}
+function show(r){add("bot",r.reply);$("quick").innerHTML="";
+  (r.buttons||[]).forEach(b=>{const x=document.createElement("button");x.className="alt";x.type="button";x.textContent=b;x.onclick=()=>send(b);$("quick").append(x)});
+  refresh()}
+async function send(t){add("me",t);show(await api("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})}))}
+$("f").onsubmit=e=>{e.preventDefault();const v=$("t").value.trim();if(v){$("t").value="";send(v)}};
+$("del").onclick=async()=>{if(confirm("Delete all your data?")){await fetch("/api/data",{method:"DELETE"});add("bot","All your data was deleted.");refresh()}};
+(async()=>{await fetch("/api/demo-login",{method:"POST"});
+  const h=await (await fetch("/health")).json();$("mode").textContent=h.mode==="demo"?"· demo mode (paid APIs off)":"· live";
+  add("bot","Namaste! Try: 'Ramesh ko 500 udhaar', 'Sita ne 200 diye', 'Ramesh ka kitna baaki', 'undo'.");refresh()})();
+</script>
+</body>
+</html>
