@@ -28,18 +28,28 @@ class Transcriber(Protocol):
     def transcribe(self, wav_path: Path) -> str: ...
 
 
+# Whisper's prompt biases spelling toward words a khata actually uses (max 224 tokens).
+STT_PROMPT = ("Khata entries in Hindi, Punjabi, Hinglish or English. Ramesh ko 500 rupaye udhaar. "
+              "Sita ne 200 diye. रमेश को पाँच सौ रुपये उधार। ਸੀਤਾ ਨੇ 300 ਜਮ੍ਹਾ ਕਰਾਏ। dedh sau, dhai hazaar.")
+
+
 class OpenAICompatTranscriber:
+    """Defaults to Groq's free tier (whisper-large-v3). Works with any OpenAI-compatible STT."""
+
     def __init__(self, key: str, url: str | None = None, model: str | None = None):
         self.key = key
-        self.url = url or os.environ.get("KHATA_STT_URL", "https://api.openai.com/v1/audio/transcriptions")
-        self.model = model or os.environ.get("KHATA_STT_MODEL", "whisper-1")
+        self.url = url or os.environ.get("KHATA_STT_URL", "https://api.groq.com/openai/v1/audio/transcriptions")
+        self.model = model or os.environ.get("KHATA_STT_MODEL", "whisper-large-v3")
 
     def transcribe(self, wav_path: Path) -> str:
         import httpx
         with wav_path.open("rb") as f:
             r = httpx.post(self.url, headers={"Authorization": f"Bearer {self.key}"},
-                           data={"model": self.model}, files={"file": (wav_path.name, f)},
-                           timeout=STT_TIMEOUT)
+                           data={"model": self.model, "prompt": STT_PROMPT, "temperature": "0",
+                                 "response_format": "json"},
+                           files={"file": (wav_path.name, f)}, timeout=STT_TIMEOUT)
+        if r.status_code == 429:
+            raise VoiceError("Voice is busy right now (free-tier limit). Please type the entry, or try in a minute.")
         if r.status_code != 200:
             raise VoiceError("Voice service error. Please type the entry instead.")
         return (r.json().get("text") or "").strip()

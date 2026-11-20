@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 openpyxl
+pillow
 python-multipart
 google-auth
 requests

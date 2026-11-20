@@ -6,6 +6,7 @@ validated here. The customer and the entry kind are never taken from the bill.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import re
@@ -42,22 +43,74 @@ class VisionReader(Protocol):
     def read(self, image: bytes, mime: str) -> dict: ...
 
 
+MAX_SIDE = 1600              # px; plenty for reading a bill total
+SEND_LIMIT = 3 * 1024 * 1024  # bytes before base64; keeps the request under provider caps
+
+
+def shrink(image: bytes, mime: str) -> tuple[bytes, str]:
+    """Downscale big photos to a JPEG that a free-tier vision API will accept."""
+    if len(image) <= SEND_LIMIT:
+        try:
+            from PIL import Image
+            with Image.open(io.BytesIO(image)) as im:
+                if max(im.size) <= MAX_SIDE:
+                    return image, mime
+        except Exception:
+            return image, mime
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        if len(image) > SEND_LIMIT:
+            raise BillError("That photo is too large. Please send a smaller one.")
+        return image, mime
+    try:
+        with Image.open(io.BytesIO(image)) as im:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            im.thumbnail((MAX_SIDE, MAX_SIDE))
+            out = io.BytesIO()
+            im.save(out, "JPEG", quality=85)
+    except Exception:
+        raise BillError("I couldn't open that photo.")
+    return out.getvalue(), "image/jpeg"
+
+
+def parse_json_reply(text: str) -> dict:
+    """Models sometimes wrap JSON in ``` fences or a <think> block. Take the first {...} object."""
+    text = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S)
+    start = text.find("{")
+    if start < 0:
+        raise BillError("I couldn't read that bill.")
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text[start:])
+    except ValueError:
+        raise BillError("I couldn't read that bill.")
+    return obj if isinstance(obj, dict) else {}
+
+
 class OpenAICompatVision:
+    """Defaults to Groq's free tier vision model. Works with any OpenAI-compatible chat API."""
+
     def __init__(self, key: str, url: str | None = None, model: str | None = None):
         self.key = key
-        self.url = url or os.environ.get("KHATA_VISION_URL", "https://api.openai.com/v1/chat/completions")
-        self.model = model or os.environ.get("KHATA_VISION_MODEL", "gpt-4o-mini")
+        self.url = url or os.environ.get("KHATA_VISION_URL", "https://api.groq.com/openai/v1/chat/completions")
+        self.model = model or os.environ.get("KHATA_VISION_MODEL", "qwen/qwen3.8-27b")
 
     def read(self, image: bytes, mime: str) -> dict:
         import httpx
+        image, mime = shrink(image, mime)
         data_url = f"data:{mime};base64,{base64.b64encode(image).decode()}"
         r = httpx.post(self.url, headers={"Authorization": f"Bearer {self.key}"}, timeout=40, json={
-            "model": self.model, "temperature": 0, "response_format": {"type": "json_object"},
+            "model": self.model, "temperature": 0, "max_completion_tokens": 300,
+            "response_format": {"type": "json_object"},
             "messages": [{"role": "system", "content": PROMPT},
-                         {"role": "user", "content": [{"type": "image_url", "image_url": {"url": data_url}}]}]})
+                         {"role": "user", "content": [
+                             {"type": "text", "text": "Read this bill. Reply with the JSON object only."},
+                             {"type": "image_url", "image_url": {"url": data_url}}]}]})
+        if r.status_code == 429:
+            raise BillError("Bill reader is busy (free-tier limit). Please type the entry, or try in a minute.")
         if r.status_code != 200:
             raise BillError("Bill reader error. Please type the entry instead.")
-        return json.loads(r.json()["choices"][0]["message"]["content"])
+        return parse_json_reply(r.json()["choices"][0]["message"].get("content") or "")
 
 
 def sniff_mime(image: bytes) -> str | None:

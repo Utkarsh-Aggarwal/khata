@@ -11,7 +11,8 @@ import threading
 
 class PaidGuard:
     def __init__(self, key: str | None = None, budget_calls: int | None = None, killed: bool | None = None):
-        self.key = key if key is not None else os.environ.get("KHATA_PAID_KEY", "")
+        self.key = key if key is not None else (os.environ.get("GROQ_API_KEY")
+                                                or os.environ.get("KHATA_PAID_KEY", ""))
         self.budget = budget_calls if budget_calls is not None else int(os.environ.get("KHATA_BUDGET_CALLS", "500"))
         self.killed = killed if killed is not None else os.environ.get("KHATA_KILL") == "1"
         self.used = 0
