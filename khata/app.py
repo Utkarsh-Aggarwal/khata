@@ -39,6 +39,17 @@ class Msg(BaseModel):
     text: str
 
 
+def client_ip(request: Request) -> str:
+    """Client address for rate limiting. KHATA_CLIENT_IP_HEADER names a header set by the
+    host's proxy (Render: x-forwarded-for). For X-Forwarded-For the right-most entry is used,
+    because it is the one the proxy added; entries to its left can be forged by the client."""
+    hdr = os.environ.get("KHATA_CLIENT_IP_HEADER", "").lower()
+    val = request.headers.get(hdr) if hdr else None
+    if val:
+        return val.split(",")[-1].strip()
+    return request.client.host if request.client else "?"
+
+
 def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
                transcriber=None, vision=None, wa_client=None, wa_verify_token=None,
                wa_app_secret=None) -> FastAPI:
@@ -102,8 +113,7 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
 
     @app.post("/api/demo-login")
     def demo_login(request: Request, response: Response, seed: bool = True):
-        hdr = os.environ.get("KHATA_CLIENT_IP_HEADER")       # e.g. fly-client-ip, only behind that proxy
-        ip = (request.headers.get(hdr) if hdr else None) or (request.client.host if request.client else "?")
+        ip = client_ip(request)
         q, now = logins[ip], time.time()
         while q and now - q[0] > 3600:
             q.popleft()

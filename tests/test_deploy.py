@@ -46,3 +46,28 @@ def test_full_judge_flow_with_paid_apis_off():
         r = c.post("/api/chat", json={"text": t}).json()
     assert "Undone" in r["reply"]
     assert c.get("/api/export.xlsx").status_code == 200
+
+
+def test_client_ip_uses_rightmost_forwarded_entry(monkeypatch):
+    from starlette.requests import Request
+    from khata.app import client_ip
+
+    def req(headers):
+        return Request({"type": "http", "headers": [(k.encode(), v.encode()) for k, v in headers.items()],
+                        "client": ("10.0.0.1", 1234)})
+
+    monkeypatch.delenv("KHATA_CLIENT_IP_HEADER", raising=False)
+    assert client_ip(req({"x-forwarded-for": "1.1.1.1"})) == "10.0.0.1"        # header ignored by default
+    monkeypatch.setenv("KHATA_CLIENT_IP_HEADER", "x-forwarded-for")
+    assert client_ip(req({"x-forwarded-for": "6.6.6.6, 203.0.113.9"})) == "203.0.113.9"   # forged left part
+    assert client_ip(req({})) == "10.0.0.1"
+
+
+def test_render_blueprint_is_free_and_declares_secrets():
+    import pathlib
+    import yaml
+    svc = yaml.safe_load(pathlib.Path("render.yaml").read_text())["services"][0]
+    assert svc["plan"] == "free" and svc["runtime"] == "docker" and svc["healthCheckPath"] == "/health"
+    secret = {e["key"] for e in svc["envVars"] if e.get("sync") is False}
+    assert {"GROQ_API_KEY", "WA_APP_SECRET", "GOOGLE_SERVICE_ACCOUNT_JSON"} <= secret
+    assert not any("value" in e for e in svc["envVars"] if e["key"] in secret)
