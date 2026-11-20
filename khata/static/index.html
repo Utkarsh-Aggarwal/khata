@@ -36,7 +36,19 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(-
 .tag{font-size:12px;color:#f6c7c7}
 table{width:100%;border-collapse:collapse;font-size:14px}
 td,th{padding:3px 4px;border-bottom:1px dotted #0004;text-align:left}
-.cancelled{text-decoration:line-through;opacity:.55}
+.cancelled{text-decoration:line-through;opacity:.75}
+.lab{grid-column:1/-1}
+.parts{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.part{border:2px dashed var(--ink);border-radius:6px;padding:8px;background:#fffdf5}
+.part b{display:block}
+.part .st{font-size:13px;font-weight:700}
+.part.alive .st{color:var(--moss)}
+.part.dead{border-color:#6b5a48;opacity:.85}
+.part.dead .st{color:var(--blood)}
+.part code{font-size:12px;word-break:break-word}
+select{font:inherit;padding:6px;border:2px solid var(--ink);background:#fffdf5;border-radius:4px}
+#seanceList li{margin:6px 0}
+#seanceList q{display:block;font-size:14px;opacity:.85}
 #total{font:22px "Special Elite"}
 .note{font-size:13px;opacity:.8}
 </style>
@@ -62,14 +74,29 @@ td,th{padding:3px 4px;border-bottom:1px dotted #0004;text-align:left}
   </section>
   <section aria-label="Dues">
     <h2>Ghosts of dues past</h2>
-    <div>Total due: <span id="total">₹0</span></div>
+    <div>Total due: <span id="total">₹0</span> <span id="late" class="note"></span></div>
+    <div class="quick">
+      <label for="rlang">Reminder language</label>
+      <select id="rlang"><option value="hinglish">Hinglish</option><option value="hi">हिन्दी</option><option value="pa">ਪੰਜਾਬੀ</option><option value="en">English</option></select>
+      <button type="button" class="alt" id="seanceBtn" aria-expanded="false" aria-controls="seance">🕯️ Hold a séance</button>
+    </div>
     <div class="ghosts" id="ghosts"></div>
+    <div id="seance" hidden>
+      <h2>🕯️ Séance</h2>
+      <p class="note">Each link opens WhatsApp with the reminder typed out. You choose whether to send it.</p>
+      <ol id="seanceList"></ol>
+    </div>
     <h2 style="margin-top:14px">Ledger</h2>
     <table><thead><tr><th>Who</th><th>Kind</th><th>₹</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
     <div class="quick">
       <a href="/api/export.xlsx"><button class="alt" type="button">Export .xlsx</button></a>
       <button class="alt" type="button" id="del">Delete my data</button>
     </div>
+  </section>
+  <section aria-label="The Lab" class="lab">
+    <h2>⚡ The Lab: what this monster is stitched from</h2>
+    <p class="note">Each part can be swapped with an environment variable. Dead parts fall back safely.</p>
+    <div class="parts" id="parts"></div>
   </section>
 </main>
 <script>
@@ -83,10 +110,13 @@ async function api(p,o,retried){const r=await fetch(p,o);
     return api(p,o,true)}
   if(!r.ok){return {reply:"Error "+r.status+" (rate limit or bad input)",buttons:[]}}return r.json()}
 async function refresh(){
-  const d=await api("/api/ledger");
+  const d=await api("/api/ledger?lang="+encodeURIComponent($("rlang").value));
   $("total").textContent=d.total_due;
+  $("late").textContent=d.overdue_count?`(${d.overdue_count} overdue)`:"";
+  const owing=(d.customers||[]).filter(c=>c.paise>0);
+  $("seanceList").innerHTML=owing.map(c=>`<li><a href="${esc(c.wa)}" target="_blank" rel="noopener">👻 ${esc(c.name)}: ${esc(c.balance)}${c.overdue?" ("+c.days_overdue+"d overdue)":""}${c.has_phone?"":" (pick contact)"}</a><q>${esc(c.message)}</q></li>`).join("")||"<li>Nobody owes you. The ghosts rest.</li>";
   $("ghosts").innerHTML=d.customers.filter(c=>c.paise>0).map(c=>
-    `<a class="ghost ${c.overdue?"over":""}" href="${esc(c.wa)}" target="_blank" rel="noopener" aria-label="Send reminder to ${esc(c.name)}, owes ${esc(c.balance)}">${GHOST}<b>${esc(c.name)}</b><span class="amt">${esc(c.balance)}</span>${c.overdue?'<span class="tag">overdue</span>':'<span class="tag">tap to summon</span>'}</a>`).join("")||"<p>No dues. The ghosts rest.</p>";
+    `<a class="ghost ${c.overdue?"over":""}" href="${esc(c.wa)}" target="_blank" rel="noopener" aria-label="Send reminder to ${esc(c.name)}, owes ${esc(c.balance)}">${GHOST}<b>${esc(c.name)}</b><span class="amt">${esc(c.balance)}</span>${c.overdue?'<span class="tag">'+c.days_overdue+' days overdue</span>':'<span class="tag">tap to summon</span>'}</a>`).join("")||"<p>No dues. The ghosts rest.</p>";
   $("rows").innerHTML=d.entries.slice(0,12).map(e=>`<tr class="${e.status}"><td>${esc(e.customer)}</td><td>${esc(e.kind)}</td><td>${(e.paise/100).toLocaleString("en-IN")}</td><td>${esc(e.status)}</td></tr>`).join("");
 }
 function show(r){add("bot",r.reply);$("quick").innerHTML="";
@@ -112,10 +142,14 @@ $("bill").onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.val
 $("sample").onclick=async()=>{const d=document.createElement("div");d.className="m me";
   d.innerHTML='<img src="/static/sample-bill.svg" alt="Sample bill: Sharma Kirana Store, total ₹846.50" width="140">';$("log").append(d);
   show(await api("/api/bill/sample",{method:"POST"}))};
+$("rlang").onchange=refresh;
+$("seanceBtn").onclick=()=>{const s=$("seance"),open=s.hidden;s.hidden=!open;$("seanceBtn").setAttribute("aria-expanded",String(open))};
+async function lab(){const d=await (await fetch("/api/lab")).json();
+  $("parts").innerHTML=d.parts.map(p=>`<div class="part ${p.alive?"alive":"dead"}"><b>${esc(p.part)}</b><span class="st">${p.alive?"● alive":"○ dormant"}</span><div>${esc(p.impl)}</div><code>${esc(p.swap)}</code></div>`).join("")}
 $("del").onclick=async()=>{if(confirm("Delete all your data?")){await fetch("/api/data",{method:"DELETE"});add("bot","All your data was deleted.");refresh()}};
 (async()=>{   // no login here: api() logs in only when the cookie is missing, so a refresh keeps your data
   const h=await (await fetch("/health")).json();$("mode").textContent=h.mode==="demo"?"· demo mode (paid APIs off)":"· live";
-  add("bot","Namaste! Try: 'Ramesh ko 500 udhaar', 'Sita ne 200 diye', 'Ramesh ka kitna baaki', 'undo'.");refresh()})();
+  add("bot","Namaste! Try: 'Ramesh ko 500 udhaar', 'Sita ne 200 diye', 'Ramesh ka number 98765 43210', 'remind', 'undo'.");refresh();lab()})();
 </script>
 </body>
 </html>

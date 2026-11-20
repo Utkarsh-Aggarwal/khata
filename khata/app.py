@@ -6,8 +6,8 @@ import os
 import secrets
 import time
 from collections import defaultdict, deque
+from datetime import date, timedelta
 from pathlib import Path
-from urllib.parse import quote
 
 from fastapi import Cookie, FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -20,6 +20,7 @@ from .sheets import from_env as sheet_from_env
 from .whatsapp import make_router, owner_for
 from .guard import PaidGuard
 from .ledger import Ledger, format_rupees
+from .reminders import ghosts
 from .voice import MAX_BYTES, VoiceError, VoicePipeline
 
 STATIC = Path(__file__).parent / "static"
@@ -111,6 +112,11 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
         if seed:
             for line in SEED:
                 bot.handle(sid, line)
+            # One overdue customer so the séance has a restless ghost. No phone numbers are
+            # seeded, so a judge tapping a ghost can't message a real stranger.
+            past = date.today() - timedelta(days=12)
+            ledger.add_entry(sid, "Pappu", "credit", 65000, entry_date=(past - timedelta(days=7)).isoformat(),
+                             due_date=past.isoformat(), source="seed")
         response.set_cookie("sid", sid, httponly=True, samesite="lax", max_age=86400 * 7)
         return {"ok": True}
 
@@ -150,20 +156,42 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
         return {**r, "reply": "(sample bill, pre-read) " + r["reply"]}
 
     @app.get("/api/ledger")
-    def get_ledger(sid: str | None = Cookie(None)):
+    def get_ledger(lang: str = "hinglish", sid: str | None = Cookie(None)):
         o = owner_of(sid)
-        bal = ledger.balances(o)
-        overdue = {e.customer for e in ledger.overdue(o)}
+        owing = [g.as_dict() for g in ghosts(ledger, o, lang)]
+        advance = [{"name": n, "paise": v, "balance": format_rupees(v), "overdue": False, "wa": None}
+                   for n, v in ledger.balances(o).items() if v < 0]       # customer paid in advance
         return {
             "total_due": format_rupees(ledger.total_due(o)),
-            "customers": [
-                {"name": n, "paise": v, "balance": format_rupees(v), "overdue": n in overdue,
-                 "wa": "https://wa.me/?text=" + quote(
-                     f"Namaste {n} ji, aapka {format_rupees(v)} baaki hai. Kripya jaldi chuka dein. 🙏")
-                 if v > 0 else None}
-                for n, v in bal.items() if v != 0],
+            "overdue_count": sum(1 for g in owing if g["overdue"]),
+            "customers": owing + advance,
             "entries": [e.__dict__ for e in ledger.entries(o, include_cancelled=True)][::-1][:50],
         }
+
+    @app.get("/api/lab")
+    def lab():
+        """The stitched parts of the monster, and whether each one is alive right now."""
+        live = guard.on
+        wa_on = bool((wa_client or os.environ.get("WA_TOKEN")) and (wa_app_secret or os.environ.get("WA_APP_SECRET")))
+        stt_model = os.environ.get("KHATA_STT_MODEL", "whisper-large-v3")
+        vis_model = os.environ.get("KHATA_VISION_MODEL", "qwen/qwen3.8-27b")
+        parts = [
+            {"part": "Ledger", "organ": "heart", "impl": "SQLite, integer paise, per-owner isolation", "alive": True,
+             "swap": "KHATA_DB"},
+            {"part": "Text brain", "organ": "brain", "impl": "Rule-based Hindi/Punjabi/Hinglish/English extractor",
+             "alive": True, "swap": "khata/extract.py"},
+            {"part": "Ears", "organ": "ears", "impl": f"Groq {stt_model} via ffmpeg" if live else "off: type instead",
+             "alive": live, "swap": "KHATA_STT_URL, KHATA_STT_MODEL"},
+            {"part": "Eyes", "organ": "eyes", "impl": f"Groq {vis_model}" if live else "off: sample bill only",
+             "alive": live, "swap": "KHATA_VISION_URL, KHATA_VISION_MODEL"},
+            {"part": "Voice box", "organ": "mouth", "impl": "WhatsApp Cloud API" if wa_on else "off: web chat only",
+             "alive": wa_on, "swap": "WA_TOKEN, WA_PHONE_ID, WA_APP_SECRET"},
+            {"part": "Memory copy", "organ": "spine", "impl": "Google Sheet mirror" if mirror else "off: .xlsx export",
+             "alive": bool(mirror), "swap": "KHATA_SHEET_ID"},
+            {"part": "Fuse box", "organ": "fuse", "impl": f"{guard.status()['budget_left']} AI calls left" if live
+             else "demo mode", "alive": live, "swap": "KHATA_BUDGET_CALLS, KHATA_KILL"},
+        ]
+        return {"mode": "live" if live else "demo", "parts": parts}
 
     @app.get("/api/export.xlsx")
     def export(sid: str | None = Cookie(None)):

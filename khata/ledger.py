@@ -62,6 +62,9 @@ class Ledger:
         self.lock = threading.RLock()
         with self.lock:
             self.db.executescript(SCHEMA)
+            cols = {r["name"] for r in self.db.execute("PRAGMA table_info(customers)")}
+            if "phone" not in cols:                    # migration for databases made before phones
+                self.db.execute("ALTER TABLE customers ADD COLUMN phone TEXT")
             self._rekey()
 
     def _rekey(self) -> None:
@@ -112,6 +115,22 @@ class Ledger:
                 "INSERT INTO customers(owner,name,key) VALUES(?,?,?)", (owner, name, k))
             self.db.commit()
             return cur.lastrowid
+
+    def set_phone(self, owner: str, name: str, phone: str | None) -> str:
+        """Store a customer's WhatsApp number (digits with country code). Returns the stored name."""
+        if phone is not None and not re.fullmatch(r"\d{11,15}", phone):
+            raise LedgerError("phone must be digits with country code")
+        with self.lock:
+            cid = self.get_or_create_customer(owner, name)
+            self.db.execute("UPDATE customers SET phone=? WHERE id=? AND owner=?", (phone, cid, owner))
+            self.db.commit()
+            return self.db.execute("SELECT name FROM customers WHERE id=?", (cid,)).fetchone()["name"]
+
+    def phones(self, owner: str) -> dict[str, str]:
+        with self.lock:
+            rows = self.db.execute("SELECT name, phone FROM customers WHERE owner=? AND phone IS NOT NULL",
+                                   (owner,)).fetchall()
+        return {r["name"]: r["phone"] for r in rows}
 
     def add_alias(self, owner: str, name: str, alias: str) -> None:
         with self.lock:

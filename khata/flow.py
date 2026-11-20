@@ -1,12 +1,19 @@
 """Conversation flow: extract -> ask for gaps -> confirm -> save. Nothing is saved unasked."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 
 from .extract import Extraction, extract, parse_amount
 from .ledger import Ledger, format_rupees
 from .names import name_key
+from .reminders import ghosts, normalize_phone
+
+MAX_ENTRY_PAISE = 10**7 * 100     # ₹1 crore: larger single entries are almost surely misreads
+PHONE_W = {"number", "nambar", "numbar", "phone", "mobile", "whatsapp", "नंबर", "नम्बर", "फोन", "ਨੰਬਰ", "ਫੋਨ"}
+PHONE_FILLER = {"ka", "ki", "ke", "is", "hai", "my", "of", "का", "की", "है", "ਦਾ", "ਦੀ", "ਹੈ", "no", "no."}
+REMIND_W = {"remind", "reminder", "reminders", "yaad", "seance", "séance", "याद", "ਯਾਦ", "tagada", "तगादा"}
 
 YES = {"haan", "han", "ha", "yes", "y", "ok", "okay", "confirm", "sahi", "theek", "thik", "हाँ", "हां",
        "हा", "सही", "ठीक", "ਹਾਂ", "ਠੀਕ", "✅", "1", "yes.", "save"}
@@ -31,6 +38,18 @@ M = {
                "pa": "ਆਪਣਾ ਖਾਤਾ Excel ਵਿੱਚ ਡਾਊਨਲੋਡ ਕਰੋ: {url}"},
     "export_wa": {"en": "Excel export is available in the web app.", "hi": "Excel एक्सपोर्ट वेब ऐप में है।",
                   "pa": "Excel ਐਕਸਪੋਰਟ ਵੈੱਬ ਐਪ ਵਿੱਚ ਹੈ।"},
+    "phone_saved": {"en": "Saved {name}'s WhatsApp number: {phone}.", "hi": "{name} का WhatsApp नंबर सेव किया: {phone}।",
+                    "pa": "{name} ਦਾ WhatsApp ਨੰਬਰ ਸੇਵ ਕੀਤਾ: {phone}।"},
+    "bad_phone": {"en": "That doesn't look like a mobile number. Send 10 digits, e.g. Ramesh ka number 98765 43210.",
+                  "hi": "यह मोबाइल नंबर नहीं लगता। 10 अंक भेजें, जैसे: रमेश का नंबर 98765 43210",
+                  "pa": "ਇਹ ਮੋਬਾਈਲ ਨੰਬਰ ਨਹੀਂ ਲੱਗਦਾ। 10 ਅੰਕ ਭੇਜੋ, ਜਿਵੇਂ: ਰਮੇਸ਼ ਦਾ ਨੰਬਰ 98765 43210"},
+    "seance": {"en": "🕯️ Séance: tap a link to send that reminder from WhatsApp.",
+               "hi": "🕯️ तगादा: लिंक दबाएँ, WhatsApp में संदेश तैयार मिलेगा।",
+               "pa": "🕯️ ਤਗਾਦਾ: ਲਿੰਕ ਦਬਾਓ, WhatsApp ਵਿੱਚ ਸੁਨੇਹਾ ਤਿਆਰ ਮਿਲੇਗਾ।"},
+    "no_dues": {"en": "Nobody owes you anything. The ghosts rest.", "hi": "किसी पर कुछ बाकी नहीं। भूत आराम कर रहे हैं।",
+                "pa": "ਕਿਸੇ ਤੇ ਕੁਝ ਬਾਕੀ ਨਹੀਂ। ਭੂਤ ਆਰਾਮ ਕਰ ਰਹੇ ਹਨ।"},
+    "too_big": {"en": "That amount looks too large (over ₹1 crore).", "hi": "यह रकम बहुत बड़ी लग रही है (₹1 करोड़ से ज़्यादा)।",
+                "pa": "ਇਹ ਰਕਮ ਬਹੁਤ ਵੱਡੀ ਲੱਗਦੀ ਹੈ (₹1 ਕਰੋੜ ਤੋਂ ਵੱਧ)।"},
     "ask_customer": {"en": "Who is the customer?", "hi": "ग्राहक कौन है?", "pa": "ਗਾਹਕ ਕੌਣ ਹੈ?"},
     "ask_amount": {"en": "How much (₹)?", "hi": "कितने रुपये?", "pa": "ਕਿੰਨੇ ਰੁਪਏ?"},
     "ask_kind": {"en": "Is this credit (udhaar given) or a payment received? Reply: credit / payment.",
@@ -44,9 +63,12 @@ M = {
                 "hi": "समझ नहीं आया। लिखें: 'रमेश को 500 उधार' या 'सीता ने 200 दिए'। help लिखें।",
                 "pa": "ਸਮਝ ਨਹੀਂ ਆਇਆ। ਲਿਖੋ: 'ਰਮੇਸ਼ ਨੂੰ 500 ਉਧਾਰ'। help ਲਿਖੋ।"},
     "help": {"en": "Khata: say or type 'Ramesh ko 500 udhaar' (credit), 'Ramesh ne 200 diye' (payment), "
-                   "'Ramesh ka kitna baaki', 'list', 'undo', 'export'. Every entry asks for confirmation.",
-             "hi": "खाता: 'रमेश को 500 उधार', 'रमेश ने 200 दिए', 'रमेश का कितना बाकी', 'list', 'undo'। हर एंट्री पर पुष्टि होगी।",
-             "pa": "ਖਾਤਾ: 'ਰਮੇਸ਼ ਨੂੰ 500 ਉਧਾਰ', 'ਰਮੇਸ਼ ਨੇ 200 ਦਿੱਤੇ', 'list', 'undo'। ਹਰ ਐਂਟਰੀ ਤੇ ਪੁਸ਼ਟੀ ਹੋਵੇਗੀ।"},
+                   "'Ramesh ka kitna baaki', 'list', 'undo', 'export', 'Ramesh ka number 98765 43210', "
+                   "'remind'. You can also send a voice note or a bill photo. Every entry asks for confirmation.",
+             "hi": "खाता: 'रमेश को 500 उधार', 'रमेश ने 200 दिए', 'रमेश का कितना बाकी', 'list', 'undo', "
+                   "'रमेश का नंबर 98765 43210', 'याद'। वॉइस नोट या बिल की फोटो भी भेज सकते हैं। हर एंट्री पर पुष्टि होगी।",
+             "pa": "ਖਾਤਾ: 'ਰਮੇਸ਼ ਨੂੰ 500 ਉਧਾਰ', 'ਰਮੇਸ਼ ਨੇ 200 ਦਿੱਤੇ', 'list', 'undo', 'ਰਮੇਸ਼ ਦਾ ਨੰਬਰ 98765 43210', "
+                   "'ਯਾਦ'। ਵੌਇਸ ਨੋਟ ਜਾਂ ਬਿੱਲ ਦੀ ਫੋਟੋ ਵੀ ਭੇਜ ਸਕਦੇ ਹੋ। ਹਰ ਐਂਟਰੀ ਤੇ ਪੁਸ਼ਟੀ ਹੋਵੇਗੀ।"},
 }
 
 
@@ -75,6 +97,11 @@ class Bot:
         if not text:
             return {"reply": self.say("help", "en"), "buttons": []}
         with self.ledger.lock:    # web threads and WhatsApp background tasks share `pending`
+            # Phone numbers first: otherwise a 10-digit number could be read as an amount edit.
+            # A pending entry is left untouched so the shopkeeper can still confirm it.
+            phone_cmd = self._phone_command(owner, text)
+            if phone_cmd:
+                return phone_cmd
             p = self.pending.get(owner)
             if p:
                 r = self._continue(owner, p, text)
@@ -90,6 +117,8 @@ class Bot:
     # ------------------------------------------------------------
     def _fresh(self, owner, text, source, today):
         low = text.lower().strip()
+        if set(low.replace("/", " ").split()) & REMIND_W:
+            return self._remind(owner, extract(text).lang)
         if low in ("export", "/export", "एक्सपोर्ट", "ਐਕਸਪੋਰਟ"):
             lang = extract(text).lang
             if source == "whatsapp":
@@ -130,6 +159,37 @@ class Bot:
             return self._advance(owner, p)
         return self._r(self.say("unknown", lang))
 
+    def _phone_command(self, owner: str, text: str) -> dict | None:
+        """'Ramesh ka number 98765 43210' stores a WhatsApp number. Not money, so no confirm step."""
+        low = text.lower()
+        if not any(w in low for w in PHONE_W):
+            return None
+        m = re.search(r"\+?\d[\d\s-]{8,16}\d", text)
+        if not m:
+            return None
+        lang = extract(text).lang
+        phone = normalize_phone(m.group(0))
+        if not phone:
+            return self._r(self.say("bad_phone", lang))
+        rest = (text[:m.start()] + " " + text[m.end():]).split()
+        name = " ".join(t for t in (w.strip(".,:;!?") for w in rest)
+                        if t and t.lower() not in PHONE_W and t.lower() not in PHONE_FILLER)[:40]
+        if not name_key(name):
+            return self._r(self.say("ask_customer", lang))
+        real = self.ledger.find_customer(owner, name) or name.title()
+        stored = self.ledger.set_phone(owner, real, phone)
+        return self._r(self.say("phone_saved", lang, name=stored, phone="+" + phone), changed=True)
+
+    def _remind(self, owner: str, lang: str) -> dict:
+        gs = ghosts(self.ledger, owner, lang if lang in ("hi", "pa", "en") else "hinglish")
+        if not gs:
+            return self._r(self.say("no_dues", lang))
+        lines = [self.say("seance", lang)]
+        for g in gs[:10]:
+            late = f" ⚠️ {g.days_overdue}d" if g.days_overdue else ""
+            lines.append(f"👻 {g.name} {format_rupees(g.paise)}{late}: {g.wa}")
+        return self._r("\n".join(lines))
+
     def start_from_extraction(self, owner: str, ex: Extraction, source: str) -> dict:
         """Used by voice/bill adapters: always routes through the same confirm step."""
         if ex.customer:
@@ -143,6 +203,10 @@ class Bot:
         ex, lang = p.ex, p.ex.lang
         if not ex.customer:
             p.awaiting = "customer"; return self._r(self.say("ask_customer", lang))
+        if ex.paise is not None and ex.paise > MAX_ENTRY_PAISE:
+            ex.paise = None
+            p.awaiting = "amount"
+            return self._r(self.say("too_big", lang) + " " + self.say("ask_amount", lang))
         if ex.paise is None:
             p.awaiting = "amount"; return self._r(self.say("ask_amount", lang))
         if ex.intent == "add_unknown":
@@ -161,7 +225,8 @@ class Bot:
             del self.pending[owner]
             return self._r(self.say("cancelled", lang))
         if p.awaiting == "customer":
-            if extract(text).intent in ("undo", "help", "list", "balance") or low in ("export", "/export"):
+            if extract(text).intent in ("undo", "help", "list", "balance") or low in ("export", "/export") \
+                    or set(low.split()) & REMIND_W:
                 return None
             name = " ".join(text.split())[:40]
             if not name_key(name):
