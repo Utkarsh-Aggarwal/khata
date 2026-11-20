@@ -66,6 +66,7 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
                             if sheet_num else None)
     app.state.mirror = mirror
     if mirror:
+        mirror.boot()            # before any request: rebuild the ledger if the host wiped the disk
         mirror.start()
 
     app.include_router(make_router(bot, voice, wa_client, verify_token=wa_verify_token,
@@ -88,7 +89,9 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
 
     @app.get("/health")
     def health():
-        sheet = {"sheet_pending": mirror.pending()} if mirror else {"sheet": "off"}
+        sheet = ({"sheet": "paused: restore failed" if mirror.paused else "on",
+                  "sheet_pending": mirror.pending(), "sheet_boot": mirror.boot_result}
+                 if mirror else {"sheet": "off"})
         return {"ok": True, "mode": "live" if guard.on else "demo", **guard.status(), **sheet}
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -186,8 +189,10 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
              "alive": live, "swap": "KHATA_VISION_URL, KHATA_VISION_MODEL"},
             {"part": "Voice box", "organ": "mouth", "impl": "WhatsApp Cloud API" if wa_on else "off: web chat only",
              "alive": wa_on, "swap": "WA_TOKEN, WA_PHONE_ID, WA_APP_SECRET"},
-            {"part": "Memory copy", "organ": "spine", "impl": "Google Sheet mirror" if mirror else "off: .xlsx export",
-             "alive": bool(mirror), "swap": "KHATA_SHEET_ID"},
+            {"part": "Memory copy", "organ": "spine",
+             "impl": ("Google Sheet mirror (paused: restore failed)" if mirror and mirror.paused
+                      else "Google Sheet mirror + restore" if mirror else "off: .xlsx export"),
+             "alive": bool(mirror) and not mirror.paused, "swap": "KHATA_SHEET_ID"},
             {"part": "Fuse box", "organ": "fuse", "impl": f"{guard.status()['budget_left']} AI calls left" if live
              else "demo mode", "alive": live, "swap": "KHATA_BUDGET_CALLS, KHATA_KILL"},
         ]

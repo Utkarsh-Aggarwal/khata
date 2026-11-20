@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS aliases(
   owner TEXT NOT NULL, alias_key TEXT NOT NULL, customer_id INTEGER NOT NULL,
   PRIMARY KEY(owner, alias_key));
 CREATE TABLE IF NOT EXISTS entries(
-  id INTEGER PRIMARY KEY, owner TEXT NOT NULL, customer_id INTEGER NOT NULL,
+  id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, customer_id INTEGER NOT NULL,
   kind TEXT NOT NULL CHECK(kind IN ('credit','payment')),
   paise INTEGER NOT NULL CHECK(paise > 0),
   note TEXT DEFAULT '', entry_date TEXT NOT NULL, due_date TEXT,

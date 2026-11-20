@@ -27,6 +27,12 @@ class FakeSheet:
     def set_status(self, row, status):
         self.rows[row - 1][6] = status
 
+    def read_all(self):
+        if self.fail_next:
+            self.fail_next -= 1
+            raise ConnectionError("down")
+        return [list(r) for r in self.rows]
+
 
 class Clock:
     t = 1000.0
@@ -104,3 +110,69 @@ def test_google_client_request_shapes():
     assert post[1].endswith("/SHEET/values/Khata%21A%3AH:append")
     assert post[2]["params"]["valueInputOption"] == "RAW"
     assert put[1].endswith("Khata%21G3") and put[2]["json"] == {"values": [["cancelled"]]}
+
+
+def test_restore_after_disk_wipe_round_trip():
+    sh = FakeSheet()
+    lg = Ledger()
+    m = SheetMirror(lg, sh, "shop", Clock())
+    lg.add_entry("shop", "Ramesh", "credit", 50000, entry_date="2026-11-01", due_date="2026-11-10")
+    lg.add_entry("shop", "Sita", "payment", 2550, entry_date="2026-11-02")
+    lg.add_entry("shop", "Sita", "credit", 900, entry_date="2026-11-03")
+    lg.undo_last("shop")
+    m.sync()
+    assert len(sh.rows) == 4
+
+    fresh = Ledger()                                   # the host wiped the disk
+    m2 = SheetMirror(fresh, sh, "shop", Clock())
+    assert m2.boot() == {"restored": 3, "skipped": 0}
+    assert fresh.balances("shop") == {"Ramesh": 50000, "Sita": -2550}
+    assert [e.status for e in fresh.entries("shop", include_cancelled=True)] == ["active", "active", "cancelled"]
+    assert fresh.entries("shop")[0].due_date == "2026-11-10"
+    assert m2.sync() == {"synced": 0, "failed": 0, "pending": 0}        # nothing re-uploaded
+
+    fresh.undo_last("shop")                            # undo after restore updates the same row
+    new_id = fresh.add_entry("shop", "Mohan", "credit", 100)
+    m2.sync()
+    assert new_id == 4 and sh.rows[2][6] == "cancelled" and [r[0] for r in sh.rows[1:]] == [1, 2, 3, 4]
+
+
+def test_restore_skips_bad_rows_and_nonempty_db():
+    sh = FakeSheet()
+    sh.rows += [[1, "2026-11-01", "Ramesh", "credit", 500, "", "active", ""],
+                [2, "2026-11-01", "Evil", "credit", -5, "", "active", ""],
+                [3, "not-a-date", "X", "credit", 5, "", "active", ""],
+                [4, "2026-11-01", "Y", "steal", 5, "", "active", ""],
+                ["", "", "", "", "", "", "", ""]]
+    lg = Ledger()
+    assert SheetMirror(lg, sh, "shop", Clock()).boot() == {"restored": 1, "skipped": 3}
+    assert lg.balances("shop") == {"Ramesh": 50000}
+    lg2 = Ledger()
+    lg2.add_entry("demo-x", "A", "credit", 1)
+    assert SheetMirror(lg2, sh, "shop", Clock()).restore()["reason"] == "database not empty"
+
+
+def test_failed_restore_pauses_sync_instead_of_reusing_ids():
+    sh = FakeSheet()
+    sh.rows.append([1, "2026-11-01", "Ramesh", "credit", 500, "", "active", ""])
+    sh.fail_next = 2
+    lg = Ledger()
+    m = SheetMirror(lg, sh, "shop", Clock())
+    assert m.boot(attempts=2, wait=0) == {"error": "ConnectionError"} and m.paused
+    lg.add_entry("shop", "Sita", "credit", 100)        # would get id 1, which row 2 already uses
+    assert m.sync()["paused"] is True and len(sh.rows) == 2
+
+
+def test_new_sheet_gets_header():
+    sh = FakeSheet()
+    sh.rows = []
+    assert SheetMirror(Ledger(), sh, "shop", Clock()).boot()["reason"] == "new sheet"
+    assert sh.rows[0][0] == "entry_id"
+
+
+def test_entry_ids_never_reused_after_delete():
+    lg = Ledger()
+    lg.add_entry("shop", "A", "credit", 1)
+    last = lg.add_entry("demo-x", "B", "credit", 1)
+    lg.delete_owner_data("demo-x")
+    assert lg.add_entry("shop", "A", "credit", 1) == last + 1
