@@ -27,7 +27,12 @@ KIND_CREDIT = {"credit", "udhaar", "udhar", "उधार", "ਉਧਾਰ", "�
 DOUBT_EXACT = {"?", "??", "kya", "kya?", "matlab", "matlab?", "samjhao", "explain", "what", "what?", "help me",
                "क्या", "क्या?", "मतलब", "मतलब?", "समझाओ", "ਕੀ", "ਕੀ?", "ਮਤਲਬ", "confused", "not sure", "pata nahi"}
 EXPENSE_ANSWER = {"expense", "kharcha", "kharch", "shop", "dukaan", "dukan", "mera", "meri", "apna", "apni",
-                  "khud", "🧾", "खर्च", "खर्चा", "दुकान", "मेरा", "अपना", "ਖਰਚਾ", "ਦੁਕਾਨ", "ਮੇਰਾ", "mine", "my"}
+                  "khud", "🧾", "खर्च", "खर्चा", "दुकान", "मेरा", "अपना", "ਖਰਚਾ", "ਦੁਕਾਨ", "ਮੇਰਾ", "mine", "my",
+                  "me", "myself", "self", "i", "main", "mai", "mujhe", "maine", "hum", "hamara", "humara", "ours",
+                  "मैं", "मै", "मुझे", "खुद", "हमारा", "ਮੈਂ", "ਖੁਦ", "ਸਾਡਾ"}
+# Never a customer's name: answering "Who is the customer?" with one of these re-asks.
+NOT_A_NAME = EXPENSE_ANSWER | {"you", "he", "she", "they", "him", "her", "woh", "wo", "vo", "usne", "unhone",
+                               "वो", "उसने", "yes", "no", "haan", "nahi", "ok", "credit", "payment", "?"}
 CATEGORY_NAME = {
     "electricity": ("Electricity", "बिजली", "ਬਿਜਲੀ"), "rent": ("Rent", "किराया", "ਕਿਰਾਇਆ"),
     "salary": ("Salary", "तनख्वाह", "ਤਨਖਾਹ"), "transport": ("Transport", "भाड़ा/पेट्रोल", "ਭਾੜਾ/ਪੈਟਰੋਲ"),
@@ -368,8 +373,9 @@ class Bot:
                     or low in ("export", "/export") or set(low.split()) & REMIND_W:
                 return None
             name = " ".join(text.split())[:40]
-            if not name_key(name):
-                return self._r(self.say("ask_customer", lang))
+            if not name_key(name) or set(name.lower().split()) <= NOT_A_NAME:
+                return self._advance(owner, p)        # ask the same question again
+            
             ex.customer = name.title()
             real = self.ledger.find_customer(owner, ex.customer)
             ex.customer = real or ex.customer

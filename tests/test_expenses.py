@@ -156,3 +156,38 @@ def test_sheet_mirror_and_restore_expenses():
     new = fresh.add_expense("shop", "rent", 100)
     m2.sync()
     assert new == 3 and sh.rows[-1][0] == "E3"
+
+
+@pytest.mark.parametrize("answer", ["Me", "me", "mera", "khud", "मैं", "myself", "🧾"])
+def test_me_means_shop_expense_not_a_customer_named_me(answer):
+    """Real bug from the Google Sheet: 'Me' was saved as a customer with a payment."""
+    lg = Ledger()
+    b = Bot(lg)
+    b.start_from_extraction("o", to_extraction(SAMPLE_BILL), "bill")
+    r = b.handle("o", answer)
+    assert "🧾" in r["reply"] and r["buttons"] == ["yes", "no"]
+    b.handle("o", "yes")
+    assert lg.balances("o") == {} and lg.expense_totals("o") == {"purchase": 84650}
+
+
+def test_pronoun_is_never_a_customer_name():
+    lg = Ledger()
+    b = Bot(lg)
+    b.handle("o", "500 udhaar")                          # asks "Who is the customer?"
+    r = b.handle("o", "he")
+    assert r["buttons"] == [] and lg.balances("o") == {}  # asked again, nothing created
+    r = b.handle("o", "Ramesh")
+    assert r["buttons"] == ["yes", "no"]
+
+
+def test_sheet_note_column_and_layout_hook():
+    sh = FakeSheet()
+    calls = []
+    sh.ensure_layout = lambda: calls.append(1)
+    lg = Ledger()
+    m = SheetMirror(lg, sh, "shop", Clock())
+    m.boot()
+    assert calls == [1]
+    lg.add_entry("shop", "Ramesh", "credit", 100, note="bill: Gupta Store")
+    m.sync()
+    assert sh.rows[-1][7] == "bill: Gupta Store"

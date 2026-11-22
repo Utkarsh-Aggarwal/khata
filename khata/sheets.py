@@ -16,7 +16,20 @@ from typing import Protocol
 
 from .ledger import Ledger
 
-HEADER = ["entry_id", "date", "customer", "kind", "rupees", "due", "status", "source"]
+HEADER = ["entry_id", "date", "customer", "kind", "rupees", "due", "status", "note"]
+
+# Summary tab: live formulas over the Khata tab, so the sheet reads like a khata, not a log.
+SUMMARY = [
+    ["Customer balances (positive = they owe you, negative = you owe them)", "", "", "",
+     "Shop expenses by month", "", ""],
+    ['=IFERROR(QUERY(FILTER({Khata!C2:C, IF(Khata!D2:D="credit",1,-1)*Khata!E2:E}, Khata!G2:G="active", '
+     '(Khata!D2:D="credit")+(Khata!D2:D="payment")), "select Col1, sum(Col2) group by Col1 '
+     'order by sum(Col2) desc label Col1 \'customer\', sum(Col2) \'balance (₹)\'", 0), "no customer entries yet")',
+     "", "", "",
+     '=IFERROR(QUERY(FILTER({LEFT(Khata!B2:B,7), Khata!C2:C, Khata!E2:E}, Khata!G2:G="active", '
+     'Khata!D2:D="expense"), "select Col1, Col2, sum(Col3) group by Col1, Col2 order by Col1 desc '
+     'label Col1 \'month\', Col2 \'category\', sum(Col3) \'spent (₹)\'", 0), "no expenses yet")'],
+]
 STATUS_COL = "G"
 
 SCHEMA = """
@@ -77,6 +90,23 @@ class GoogleSheetClient:
         r.raise_for_status()
         return r.json().get("values", [])
 
+    def ensure_layout(self):
+        """Fix an old 'source' header to 'note', and add the Summary tab of live formulas once."""
+        r = self.s.get(self._url("H1"), timeout=20)
+        r.raise_for_status()
+        if (r.json().get("values") or [[""]])[0][:1] == ["source"]:
+            self.s.put(self._url("H1"), params={"valueInputOption": "RAW"},
+                       json={"values": [["note"]]}, timeout=20).raise_for_status()
+        meta = self.s.get(f"{self.API}/{self.id}", params={"fields": "sheets.properties.title"}, timeout=20)
+        meta.raise_for_status()
+        if "Summary" in {s["properties"]["title"] for s in meta.json().get("sheets", [])}:
+            return
+        self.s.post(f"{self.API}/{self.id}:batchUpdate", timeout=20, json={"requests": [
+            {"addSheet": {"properties": {"title": "Summary"}}}]}).raise_for_status()
+        from urllib.parse import quote
+        self.s.put(f"{self.API}/{self.id}/values/{quote('Summary!A1:G2')}", timeout=20,
+                   params={"valueInputOption": "USER_ENTERED"}, json={"values": SUMMARY}).raise_for_status()
+
 
 class SheetMirror:
     def __init__(self, ledger: Ledger, client: SheetClient, owner: str, clock=time.time):
@@ -93,6 +123,12 @@ class SheetMirror:
             try:
                 self.boot_result = self.restore()
                 self.paused = False
+                layout = getattr(self.client, "ensure_layout", None)
+                if layout:
+                    try:
+                        layout()                       # cosmetic: never blocks syncing
+                    except Exception as ex:
+                        self.boot_result = {**self.boot_result, "layout_error": type(ex).__name__}
                 return self.boot_result
             except Exception as ex:      # network, auth, quota
                 self.boot_result = {"error": type(ex).__name__}
@@ -173,7 +209,7 @@ class SheetMirror:
     def _records(self) -> list[tuple[int, str, str, list]]:
         """Everything mirrored: (sync key, sheet id, status, row). Expenses use negative keys."""
         out = [(e.id, str(e.id), e.status, [e.id, e.entry_date, e.customer, e.kind, e.paise / 100,
-                                            e.due_date or "", e.status, ""])
+                                            e.due_date or "", e.status, e.note or ""])
                for e in self.ledger.entries(self.owner, include_cancelled=True)]
         out += [(-x.id, f"E{x.id}", x.status, [f"E{x.id}", x.entry_date, x.category, "expense", x.paise / 100,
                                                "", x.status, x.note])
