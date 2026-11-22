@@ -57,7 +57,7 @@ MULT.update({"सौ": 100, "हज़ार": 1000, "हजार": 1000, "ल�
 _DIGITS = {c: str(i) for i, c in enumerate("०१२३४५६७८९")}
 _DIGITS.update({c: str(i) for i, c in enumerate("੦੧੨੩੪੫੬੭੮੯")})
 
-PUNCT = ".,;:!?()[]{}\"'-"
+PUNCT = ".,;:!?()[]{}\"'-।॥"     # includes the Devanagari danda that Whisper adds to Hindi
 NUM_RE = re.compile(r"\d+(?:,\d{2,3})*(?:\.\d+)?")
 
 
@@ -186,7 +186,7 @@ def detect_lang(text: str) -> str:
 
 
 def _tok(text: str) -> list[str]:
-    return [t for t in re.split(r"[\s,.;:!?]+", _norm(text)) if t]
+    return [t for t in re.split(r"[\s,.;:!?।॥]+", _norm(text)) if t]
 
 
 # A name sits directly before a postposition/honorific (Ramesh ko, Gupta ji, ਰਮੇਸ਼ ਨੂੰ),

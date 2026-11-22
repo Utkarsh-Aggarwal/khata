@@ -4,4 +4,9 @@ __pycache__/
 .hypothesis/
 .pytest_cache/
 .env
+.env.*
+!.env.example
+sa.json
+*service-account*.json
+*.db.bak
 samples/private/

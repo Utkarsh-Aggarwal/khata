@@ -3,6 +3,7 @@ uvicorn
 openpyxl
 pillow
 python-multipart
+python-dotenv
 google-auth
 requests
 mcp>=2.3,<3

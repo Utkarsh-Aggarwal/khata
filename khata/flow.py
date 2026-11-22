@@ -219,7 +219,7 @@ class Bot:
                        buttons=["yes", "no"], pending=True)
 
     def _continue(self, owner, p: Pending, text: str):
-        low = text.lower().strip().rstrip(".!")
+        low = text.lower().strip().rstrip(".!।॥")
         ex, lang = p.ex, p.ex.lang
         if low in NO:
             del self.pending[owner]
