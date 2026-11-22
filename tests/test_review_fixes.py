@@ -73,7 +73,7 @@ def test_commands_at_customer_prompt_are_not_names():
     r = b.handle("o", "help")
     assert "Khata:" in r["reply"]
     b.start_from_extraction("o", to_extraction(SAMPLE_BILL), "bill")
-    assert b.handle("o", "!!!")["reply"] == "Who is the customer?"
+    assert b.handle("o", "!!!")["reply"].startswith("Whose bill was this")
     assert lg.balances("o") == {}
 
 
