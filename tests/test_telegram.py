@@ -649,7 +649,7 @@ def test_voice_heard_then_confirm_nothing_saved():  # 7.1, 7.2
     api.files["V1"] = (b"OggS" + b"\0" * 32, "voice/file_1.oga")
     adapter, _, _ = make_adapter(bot=Bot(lg), api=api, voice=voice)
     adapter.handle_update(_msg_update(1, voice={"file_id": "V1", "duration": 2}))
-    assert stt.suffixes == [".oga"]
+    assert stt.suffixes == [".ogg"]       # Telegram's .oga is renamed: Groq rejects that extension
     heard, confirm = api.sent()
     assert heard == (CHAT, "🎙️ Heard: “Ramesh ko 500 udhaar”", None)
     assert confirm[2] == ["yes", "no"]

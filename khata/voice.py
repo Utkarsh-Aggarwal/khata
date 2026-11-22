@@ -6,6 +6,7 @@ Audio is written to a temp dir only for conversion and is always deleted afterwa
 """
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
@@ -14,6 +15,8 @@ from pathlib import Path
 from typing import Protocol
 
 from .guard import PaidGuard
+
+log = logging.getLogger("khata.voice")
 
 MAX_BYTES = 10 * 1024 * 1024
 FFMPEG_TIMEOUT = 20
@@ -51,6 +54,11 @@ class OpenAICompatTranscriber:
         if r.status_code == 429:
             raise VoiceError("Voice is busy right now (free-tier limit). Please type the entry, or try in a minute.")
         if r.status_code != 200:
+            try:
+                reason = str((r.json().get("error") or {}).get("message", ""))[:200]
+            except Exception:
+                reason = ""
+            log.warning("STT error %s (%s): %s", r.status_code, wav_path.suffix, reason)
             raise VoiceError("Voice service error. Please type the entry instead.")
         return (r.json().get("text") or "").strip()
 
@@ -84,7 +92,9 @@ class VoicePipeline:
         if not self.guard.take():
             raise VoiceError("Voice is off in demo mode. Please type the entry, e.g. 'Ramesh ko 500 udhaar'.")
         tr = self.transcriber or OpenAICompatTranscriber(self.guard.key)
-        suffix = suffix if suffix in (".ogg", ".oga", ".opus", ".webm", ".mp3", ".m4a", ".wav", ".mp4") else ".bin"
+        # .oga (Telegram voice notes) is Ogg audio, but Groq only accepts the .ogg extension.
+        suffix = {".oga": ".ogg"}.get(suffix, suffix)
+        suffix = suffix if suffix in (".ogg", ".opus", ".webm", ".mp3", ".m4a", ".wav", ".mp4") else ".bin"
         tmp = tempfile.mkdtemp(prefix="khata-voice-")
         self.last_tmpdir = tmp
         try:

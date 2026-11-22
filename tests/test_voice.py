@@ -89,3 +89,10 @@ def test_ffmpeg_converts_to_16k_mono(tmp_path):
     out = to_wav(src, tmp_path / "out.wav")
     with wave.open(str(out)) as w:
         assert (w.getnchannels(), w.getframerate()) == (1, 16000)
+
+
+def test_telegram_oga_is_uploaded_as_ogg():
+    """Groq rejects the .oga extension (found with a real Telegram voice note)."""
+    tr = FakeTranscriber()
+    VoicePipeline(PaidGuard(key="k", budget_calls=9, killed=False), tr).transcribe(b"OggS" + b"\0" * 64, ".oga")
+    assert tr.saw.suffix == ".ogg"
