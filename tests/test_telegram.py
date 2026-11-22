@@ -728,7 +728,7 @@ def test_bill_photo_asks_customer_then_kind():  # 8.4
     reply = api.sent()[-1][1]
     assert "₹846.50" in reply and "Who is the customer?" in reply
     adapter.handle_update(text_update(2, "Ramesh"))
-    assert api.sent()[-1][2] == ["credit", "payment"]  # credit/payment is asked, not taken from the bill
+    assert api.sent()[-1][2] == ["credit", "payment", "?"]  # credit/payment is asked, not taken from the bill
     assert lg.entries(_OWNER, include_cancelled=True) == []
 
 

@@ -159,9 +159,26 @@ STOP = (CREDIT | PAYMENT | BAL | LIST | UNDO | HELP | NE | KO | PAST | {
     "maine", "mainne", "mainey", "main", "mai", "hamne", "humne", "ham", "hum", "i", "we", "maina",
     "मैंने", "मैने", "मैं", "मै", "हमने", "हम", "ਮੈਂ", "ਮੈਂਨੇ", "ਅਸੀਂ"}) \
     | set(WORDS) | set(MULT) | set(MODS)
+# Verb families for _direction. Future forms (dega, dunga, degi) are about later repayment,
+# not this entry, so they are deliberately absent.
+GIVE_V = {"diye", "diya", "dia", "diyе", "de", "dediye", "dediya", "paid", "pay", "gave", "given", "lent",
+          "bhara", "bhare", "bhari", "bhar", "lautaye", "lautaya", "lautai", "lauta", "lotaye", "lotaya",
+          "returned", "return", "wapas", "vapas", "wapis", "chukaye", "chukaya", "chuka", "jama", "bheje",
+          "bheja", "deposited", "दिए", "दिये", "दिया", "दे", "भरा", "भरे", "भर", "लौटाए", "लौटाया", "लौटा",
+          "वापस", "चुकाए", "चुकाया", "जमा", "भेजे", "भेजा", "ਦਿੱਤੇ", "ਦਿੱਤਾ", "ਦੇ", "ਮੋੜੇ", "ਮੋੜਿਆ", "ਜਮ੍ਹਾ",
+          "ਭਰਿਆ", "ਭੇਜੇ"}
+TAKE_V = {"liya", "liye", "lia", "le", "lie", "took", "taken", "borrowed", "लिया", "लिए", "लिये", "ले",
+          "ਲਿਆ", "ਲਏ", "ਲੈ"}
+RECV_V = {"mila", "mile", "mil", "received", "got", "मिला", "मिले", "मिल", "ਮਿਲੇ", "ਮਿਲਿਆ", "ਮਿਲ"}
+FIRST_P = {"maine", "mainne", "mainey", "main", "mai", "hamne", "humne", "i", "we", "मैंने", "मैने", "मैं",
+           "मै", "हमने", "ਮੈਂ", "ਮੈਂਨੇ", "ਅਸੀਂ"}
+TO_M = {"ko", "को", "ਨੂੰ", "to"}
+FROM_M = {"se", "से", "ਤੋਂ", "from"}
+BILL_W = {"bill", "बिल", "ਬਿੱਲ"}
+
 RECEIVED = {"mil", "mila", "mile", "मिल", "मिला", "मिले", "ਮਿਲ", "ਮਿਲੇ", "bheje", "bheja", "भेजे",
             "भेजा", "ਭੇਜੇ", "aaye", "आए", "received", "got"}
-STOP |= RECEIVED
+STOP |= RECEIVED | GIVE_V | TAKE_V | RECV_V | FIRST_P | BILL_W | {"back", "account", "lautana", "bhi"}
 
 
 @dataclass
@@ -183,7 +200,7 @@ def detect_lang(text: str) -> str:
         return "hi"
     low = set(re.findall(r"[a-z]+", text.lower()))
     if low & {"ko", "ne", "udhaar", "udhar", "kal", "diye", "diya", "kitna", "hai", "baaki",
-              "rupay", "rupaye", "hisaab", "liya", "wapas", "paanch", "sau", "hazaar", "ka"}:
+              "rupay", "rupaye", "hisaab", "liya", "wapas", "paanch", "sau", "hazaar", "ka", "maine", "hamne", "bhara", "bhar", "lautaye", "liye", "mile", "kiye"}:
         return "hinglish"
     return "en"
 
@@ -230,6 +247,32 @@ def _name_tokens(clean: list[str], used: set[int]) -> list[str]:
     return run
 
 
+def _direction(low: list[str], s: set[str]) -> str | None:
+    """Which way did the money or goods move between the shop and the person?
+
+    shop -> person (gave udhaar, gave cash, paid their bill, returned money to them): add_credit
+    person -> shop (paid, paid their bill, returned money, deposited):                add_payment
+    Returns "ask" when it can't tell, or None to leave it to the keyword rules.
+    """
+    give, take, recv = bool(s & GIVE_V), bool(s & TAKE_V), bool(s & RECV_V)
+    first = bool(s & FIRST_P)
+    ne, to, frm, by = bool(s & NE), bool(s & TO_M), bool(s & FROM_M), "by" in s
+    if first and s & BILL_W and not (to or frm or (ne and not s & {"मैं", "ਮੈਂ"})):
+        return "ask"                                  # "maine bill bhara": a person's bill, or the shop's?
+    if recv and not (give or take or first):          # "Deepak se 80 mile", "Ramesh ko 500 mile"
+        return "add_credit" if to and not frm else "add_payment"
+    if give == take:
+        return None if not give else "ask"            # no verb, or contradictory verbs
+    if first or (low and low[0] in {"give", "lend", "put"}):
+        shop_acts = True
+    elif (ne or by) or not (to or frm):               # "Ramesh ne ...", "paid by Sita", "Ramesh paid me"
+        shop_acts = False
+    else:                                             # "Ramesh ko 500 diye", "returned 500 to Ramesh"
+        shop_acts = to
+    money_left_shop = give if shop_acts else take
+    return "add_credit" if money_left_shop else "add_payment"
+
+
 def _wants_undo(s: set[str]) -> bool:
     return bool(s & {"delete", "remove", "hatao", "hata", "cancel", "हटाओ", "ਹਟਾਓ"}
                 and s & {"last", "pichhli", "pichli", "entry", "पिछली", "एंट्री", "ਪਿਛਲੀ", "ਐਂਟਰੀ"})
@@ -268,9 +311,14 @@ def extract(text: str, today: date | None = None) -> Extraction:
 
     ne = bool(s & NE)
     ko = bool(s & KO)
+    flow = _direction(low, s)
     SETTLE = {"paid", "received", "jama", "जमा", "payment", "returned", "wapas", "vapas", "वापस",
               "settled", "ਮੋੜੇ", "चुकाए", "chukaye"} | RECEIVED
-    if s & SETTLE:
+    if flow == "ask":
+        kind = "add_unknown"            # e.g. "maine bill bhara": whose bill? ask, don't guess
+    elif flow:
+        kind = flow
+    elif s & SETTLE:
         kind = "add_payment"
     elif s & CREDIT:
         kind = "add_credit"

@@ -19,17 +19,37 @@ YES = {"haan", "han", "ha", "yes", "y", "ok", "okay", "confirm", "sahi", "theek"
        "हा", "सही", "ठीक", "ਹਾਂ", "ਠੀਕ", "✅", "1", "yes.", "save"}
 NO = {"nahi", "nahin", "no", "n", "cancel", "nope", "नहीं", "नही", "रद्द", "ਨਹੀਂ", "ਨਹੀ", "❌", "0", "galat", "गलत"}
 CREDIT_W = {"credit", "udhaar", "udhar", "उधार", "ਉਧਾਰ", "gave", "diya"}
+# Answers to "which way did the money go?"
+KIND_PAY = {"payment", "paid", "received", "jama", "जमा", "ਜਮ੍ਹਾ", "📥", "they", "he", "she", "unhone", "usne",
+            "उन्होंने", "उसने", "mila", "mile", "मिले", "aaya", "aaye", "आए", "ਉਸਨੇ", "ਮਿਲੇ"}
+KIND_CREDIT = {"credit", "udhaar", "udhar", "उधार", "ਉਧਾਰ", "📤", "i", "maine", "मैंने", "मैने", "ਮੈਂ", "gave",
+               "diya", "diye", "दिए", "lent", "returned", "lautaye", "लौटाए", "bhara", "भरा"}
+DOUBT_EXACT = {"?", "??", "kya", "kya?", "matlab", "matlab?", "samjhao", "explain", "what", "what?", "help me",
+               "क्या", "क्या?", "मतलब", "मतलब?", "समझाओ", "ਕੀ", "ਕੀ?", "ਮਤਲਬ", "confused", "not sure", "pata nahi"}
+DOUBT_PHRASES = ("kya matlab", "matlab kya", "samajh nahi", "samjh nahi", "what does", "what is credit",
+                 "what is payment", "which one", "kaunsa", "konsa", "क्या मतलब", "समझ नहीं", "ਸਮਝ ਨਹੀਂ")
 PAY_W = {"payment", "paid", "received", "jama", "जमा", "wapas", "वापस", "ਜਮ੍ਹਾ"}
 
 M = {
-    "confirm_credit": {"en": "Save: {name} owes you {amt}{due}? Reply yes / no, or send a new amount to edit.",
-                       "hi": "सेव करूँ: {name} पर {amt} उधार{due}? हाँ / नहीं, या नई रकम भेजें।",
-                       "pa": "ਸੇਵ ਕਰਾਂ: {name} ਤੇ {amt} ਉਧਾਰ{due}? ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਭੇਜੋ।"},
-    "confirm_payment": {"en": "Save: {name} paid you {amt}? Reply yes / no, or send a new amount to edit.",
-                        "hi": "सेव करूँ: {name} ने {amt} दिए? हाँ / नहीं, या नई रकम भेजें।",
-                        "pa": "ਸੇਵ ਕਰਾਂ: {name} ਨੇ {amt} ਦਿੱਤੇ? ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਭੇਜੋ।"},
-    "saved": {"en": "Saved. {name} now owes {bal}.", "hi": "सेव हो गया। {name} पर अब {bal} बाकी।",
-              "pa": "ਸੇਵ ਹੋ ਗਿਆ। {name} ਤੇ ਹੁਣ {bal} ਬਾਕੀ।"},
+    "confirm_credit": {"en": "Save: 📤 you gave {name} {amt}{due}. After this, {after}. Reply yes / no, or send a new amount.",
+                       "hi": "सेव करूँ: 📤 आपने {name} को {amt} दिए (उधार){due}। इसके बाद {after}। हाँ / नहीं, या नई रकम भेजें।",
+                       "pa": "ਸੇਵ ਕਰਾਂ: 📤 ਤੁਸੀਂ {name} ਨੂੰ {amt} ਦਿੱਤੇ (ਉਧਾਰ){due}। ਇਸ ਤੋਂ ਬਾਅਦ {after}। ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਭੇਜੋ।"},
+    "confirm_payment": {"en": "Save: 📥 {name} gave you {amt}. After this, {after}. Reply yes / no, or send a new amount.",
+                        "hi": "सेव करूँ: 📥 {name} ने आपको {amt} दिए। इसके बाद {after}। हाँ / नहीं, या नई रकम भेजें।",
+                        "pa": "ਸੇਵ ਕਰਾਂ: 📥 {name} ਨੇ ਤੁਹਾਨੂੰ {amt} ਦਿੱਤੇ। ਇਸ ਤੋਂ ਬਾਅਦ {after}। ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਭੇਜੋ।"},
+    "saved": {"en": "Saved. Now {after}.", "hi": "सेव हो गया। अब {after}।", "pa": "ਸੇਵ ਹੋ ਗਿਆ। ਹੁਣ {after}।"},
+    "now_label": {"en": "Right now: ", "hi": "अभी: ", "pa": "ਹੁਣ: "},
+    "owes_you": {"en": "{name} owes you {amt}", "hi": "{name} पर {amt} बाकी", "pa": "{name} ਤੇ {amt} ਬਾਕੀ"},
+    "you_owe": {"en": "you owe {name} {amt}", "hi": "आपको {name} को {amt} देने हैं",
+                "pa": "ਤੁਸੀਂ {name} ਨੂੰ {amt} ਦੇਣੇ ਹਨ"},
+    "settled": {"en": "{name}'s account is settled (₹0)", "hi": "{name} का हिसाब बराबर (₹0)",
+                "pa": "{name} ਦਾ ਹਿਸਾਬ ਬਰਾਬਰ (₹0)"},
+    "explain": {"en": "📤 credit = money or goods went from you to {name}: you gave udhaar, gave cash, paid their bill "
+                      "for them, or returned their money. 📥 payment = money came from {name} to you: they paid you, "
+                      "paid their bill, or returned your money. {now}",
+                "hi": "📤 उधार = पैसा या सामान आपसे {name} को गया: उधार दिया, नकद दिया, उनका बिल भरा, या उनके पैसे लौटाए। "
+                      "📥 जमा = पैसा {name} से आपको आया: उन्होंने पैसे दिए, बिल चुकाया, या आपके पैसे लौटाए। {now}",
+                "pa": "📤 ਉਧਾਰ = ਪੈਸਾ ਜਾਂ ਸਮਾਨ ਤੁਹਾਡੇ ਤੋਂ {name} ਨੂੰ ਗਿਆ। 📥 ਜਮ੍ਹਾ = ਪੈਸਾ {name} ਤੋਂ ਤੁਹਾਨੂੰ ਆਇਆ। {now}"},
     "cancelled": {"en": "Cancelled. Nothing saved.", "hi": "रद्द किया। कुछ सेव नहीं हुआ।",
                   "pa": "ਰੱਦ ਕੀਤਾ। ਕੁਝ ਸੇਵ ਨਹੀਂ ਹੋਇਆ।"},
     "discarded": {"en": "(The unsaved entry was discarded.)", "hi": "(बिना सेव की एंट्री हटा दी गई।)",
@@ -54,10 +74,13 @@ M = {
                 "pa": "ਇਹ ਰਕਮ ਬਹੁਤ ਵੱਡੀ ਲੱਗਦੀ ਹੈ (₹1 ਕਰੋੜ ਤੋਂ ਵੱਧ)।"},
     "ask_customer": {"en": "Who is the customer?", "hi": "ग्राहक कौन है?", "pa": "ਗਾਹਕ ਕੌਣ ਹੈ?"},
     "ask_amount": {"en": "How much (₹)?", "hi": "कितने रुपये?", "pa": "ਕਿੰਨੇ ਰੁਪਏ?"},
-    "ask_kind": {"en": "Is this credit (udhaar given) or a payment received? Reply: credit / payment.",
-                 "hi": "यह उधार है या पेमेंट मिला? लिखें: उधार / जमा।",
-                 "pa": "ਇਹ ਉਧਾਰ ਹੈ ਜਾਂ ਪੇਮੈਂਟ ਮਿਲੀ? ਲਿਖੋ: ਉਧਾਰ / ਜਮ੍ਹਾ।"},
-    "balance": {"en": "{name} owes {bal}.", "hi": "{name} पर {bal} बाकी है।", "pa": "{name} ਤੇ {bal} ਬਾਕੀ ਹੈ।"},
+    "ask_kind": {"en": "Which way did the {amt} go? 📤 credit: you gave it to {name} (udhaar, cash, paid their bill, "
+                       "or returned their money). 📥 payment: {name} gave it to you. Not sure? Ask '?'",
+                 "hi": "{amt} किस तरफ गए? 📤 उधार: आपने {name} को दिए (उधार, नकद, उनका बिल भरा, या पैसे लौटाए)। "
+                       "📥 जमा: {name} ने आपको दिए। समझ न आए तो '?' भेजें।",
+                 "pa": "{amt} ਕਿਸ ਪਾਸੇ ਗਏ? 📤 ਉਧਾਰ: ਤੁਸੀਂ {name} ਨੂੰ ਦਿੱਤੇ। 📥 ਜਮ੍ਹਾ: {name} ਨੇ ਤੁਹਾਨੂੰ ਦਿੱਤੇ। "
+                       "ਸਮਝ ਨਾ ਆਵੇ ਤਾਂ '?' ਭੇਜੋ।"},
+    "balance": {"en": "{after}.", "hi": "{after}।", "pa": "{after}।"},
     "nobody": {"en": "No entries yet.", "hi": "अभी कोई एंट्री नहीं।", "pa": "ਹਾਲੇ ਕੋਈ ਐਂਟਰੀ ਨਹੀਂ।"},
     "undone": {"en": "Undone: {what}.", "hi": "वापस किया: {what}।", "pa": "ਵਾਪਸ ਕੀਤਾ: {what}।"},
     "nothing_undo": {"en": "Nothing to undo.", "hi": "वापस करने को कुछ नहीं।", "pa": "ਵਾਪਸ ਕਰਨ ਲਈ ਕੁਝ ਨਹੀਂ।"},
@@ -105,6 +128,8 @@ class Bot:
             if phone_cmd:
                 return phone_cmd
             p = self.pending.get(owner)
+            if p and self._is_doubt(text):
+                return self._explain(owner, p)        # answer the question, keep the entry waiting
             if p:
                 r = self._continue(owner, p, text)
                 if r is not None:
@@ -147,8 +172,8 @@ class Bot:
             if ex.customer:
                 real = self.ledger.find_customer(owner, ex.customer)
                 if real:
-                    return self._r(self.say("balance", lang, name=real,
-                                            bal=format_rupees(self.ledger.balance(owner, real))))
+                    return self._r(self.say("balance", lang,
+                                            after=self._after(lang, real, self.ledger.balance(owner, real))))
             b = {k: v for k, v in self.ledger.balances(owner).items() if v}
             if not b:
                 return self._r(self.say("nobody", lang))
@@ -203,6 +228,32 @@ class Bot:
         self.pending[owner] = p
         return self._advance(owner, p)
 
+    # ---- plain-language balances and doubts ------------------------------------------------
+    def _after(self, lang: str, name: str, bal: int) -> str:
+        if bal > 0:
+            return self.say("owes_you", lang, name=name, amt=format_rupees(bal))
+        if bal < 0:
+            return self.say("you_owe", lang, name=name, amt=format_rupees(-bal))
+        return self.say("settled", lang, name=name)
+
+    @staticmethod
+    def _is_doubt(text: str) -> bool:
+        low = text.lower().strip()
+        return low in DOUBT_EXACT or any(p in low for p in DOUBT_PHRASES)
+
+    def _ask_kind(self, lang: str, ex: Extraction) -> dict:
+        return self._r(self.say("ask_kind", lang, name=ex.customer, amt=format_rupees(ex.paise)),
+                       buttons=["credit", "payment", "?"])
+
+    def _explain(self, owner: str, p: Pending) -> dict:
+        """'?' while an entry waits: explain what credit/payment mean here, then ask again."""
+        ex, lang = p.ex, p.ex.lang
+        name = ex.customer or {"en": "the customer", "hi": "ग्राहक", "pa": "ਗਾਹਕ"}[L(lang)]
+        now = self._after(lang, ex.customer, self.ledger.balance(owner, ex.customer)) if ex.customer else ""
+        now = (self.say("now_label", lang) + now) if now else ""
+        nxt = self._advance(owner, p)
+        return {**nxt, "reply": self.say("explain", lang, name=name, now=now) + "\n\n" + nxt["reply"]}
+
     def _advance(self, owner, p: Pending):
         ex, lang = p.ex, p.ex.lang
         if not ex.customer:
@@ -215,11 +266,13 @@ class Bot:
             p.awaiting = "amount"; return self._r(self.say("ask_amount", lang))
         if ex.intent == "add_unknown":
             p.awaiting = "kind"
-            return self._r(self.say("ask_kind", lang), buttons=["credit", "payment"])
+            return self._ask_kind(lang, ex)
         p.awaiting = "confirm"
         key = "confirm_credit" if ex.intent == "add_credit" else "confirm_payment"
         due = f" (due {ex.due_date})" if ex.due_date else ""
-        return self._r(self.say(key, lang, name=ex.customer, amt=format_rupees(ex.paise), due=due),
+        delta = ex.paise if ex.intent == "add_credit" else -ex.paise
+        after = self._after(lang, ex.customer, self.ledger.balance(owner, ex.customer) + delta)
+        return self._r(self.say(key, lang, name=ex.customer, amt=format_rupees(ex.paise), due=due, after=after),
                        buttons=["yes", "no"], pending=True)
 
     def _continue(self, owner, p: Pending, text: str):
@@ -246,13 +299,13 @@ class Bot:
             ex.paise = amt
             return self._advance(owner, p)
         if p.awaiting == "kind":
-            w = set(low.split())
-            if w & CREDIT_W:
-                ex.intent = "add_credit"
-            elif w & PAY_W:
+            w = set(low.replace("📤", " 📤 ").replace("📥", " 📥 ").split())
+            if w & KIND_PAY:                  # checked first: "they gave" also contains "gave"
                 ex.intent = "add_payment"
+            elif w & KIND_CREDIT:
+                ex.intent = "add_credit"
             else:
-                return self._r(self.say("ask_kind", lang), buttons=["credit", "payment"])
+                return self._ask_kind(lang, ex)
             return self._advance(owner, p)
         # confirm stage
         if low in YES:
@@ -262,7 +315,7 @@ class Bot:
                 source=p.source)
             del self.pending[owner]
             bal = self.ledger.balance(owner, ex.customer)
-            return self._r(self.say("saved", lang, name=ex.customer, bal=format_rupees(bal)),
+            return self._r(self.say("saved", lang, after=self._after(lang, ex.customer, bal)),
                            changed=True, entry_id=e_id)
         amt, _ = parse_amount(text)
         if amt is not None and len(low.split()) <= 4:    # edit amount, unless it names someone else

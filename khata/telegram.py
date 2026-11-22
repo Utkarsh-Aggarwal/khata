@@ -32,7 +32,8 @@ API_BASE = "https://api.telegram.org"
 FILE_MAX = 10 * 1024 * 1024
 ALLOWED_UPDATES = ["message", "callback_query"]
 BUTTON_TITLES = {"yes": "✅ Yes / हाँ", "no": "❌ No / नहीं",
-                 "credit": "Credit / उधार", "payment": "Payment / जमा"}
+                 "credit": "📤 I gave / मैंने दिए", "payment": "📥 They gave / उन्होंने दिए",
+                 "?": "❓ Explain / समझाओ"}
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ERROR_REPLY = "Something went wrong. Nothing was saved. Please try again."
 PRIVATE_ONLY = "Please message me privately. Khata only works in a one-to-one chat."

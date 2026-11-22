@@ -58,7 +58,7 @@ def test_bill_always_asks_customer_and_kind_even_if_bill_says_otherwise():
     assert "₹846.50" in r["reply"] and "Who is the customer?" in r["reply"]
     assert c.get("/api/ledger").json()["entries"] == []
     r = c.post("/api/chat", json={"text": "Ramesh"}).json()
-    assert r["buttons"] == ["credit", "payment"]                 # kind is asked, not taken from bill
+    assert r["buttons"] == ["credit", "payment", "?"]                 # kind is asked, not taken from bill
     r = c.post("/api/chat", json={"text": "credit"}).json()
     assert r["buttons"] == ["yes", "no"] and "Ramesh" in r["reply"] and "Mallory" not in r["reply"]
     c.post("/api/chat", json={"text": "yes"})
