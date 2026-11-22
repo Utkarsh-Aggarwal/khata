@@ -42,7 +42,13 @@ TOO_LARGE = "That photo is too large. Please send a smaller one."
 RATE_PER_MIN = 30
 COMMANDS = {"start": "help", "help": "help", "export": "export",
             "list": "list", "undo": "undo", "remind": "remind",
-            "expenses": "kharcha", "kharcha": "kharcha"}              # "id" is handled by the adapter
+            "expenses": "kharcha", "kharcha": "kharcha", "month": "kharcha",
+            "dues": "dues", "udhaar": "dues", "hisaab": "dues", "today": "today", "aaj": "today"}  # "id": adapter
+# Shown in Telegram's "/" menu (setMyCommands).
+MENU = [("dues", "Udhaar given and taken / लेन-देन"), ("today", "Today's expenses / आज का खर्च"),
+        ("expenses", "This month's expenses / महीने का खर्च"), ("remind", "Reminder links / तगादा"),
+        ("undo", "Undo last entry / पिछली एंट्री हटाओ"), ("export", "Excel file / एक्सेल"),
+        ("help", "How to use / मदद"), ("id", "Your chat id")]
 
 log = logging.getLogger("khata.telegram")
 
@@ -194,6 +200,9 @@ class TelegramAPI:
         self._call("setWebhook", json={"url": url, "secret_token": secret_token,
                                        "allowed_updates": ALLOWED_UPDATES,
                                        "drop_pending_updates": False})
+
+    def set_commands(self, commands: list[tuple[str, str]]) -> None:
+        self._call("setMyCommands", json={"commands": [{"command": c, "description": d[:256]} for c, d in commands]})
 
     def delete_webhook(self) -> None:
         self._call("deleteWebhook", json={})

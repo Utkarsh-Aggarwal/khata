@@ -182,9 +182,8 @@ SAMPLE_BILL = BillFields(vendor="Sharma Kirana Store", paise=84650, bill_date=No
 
 def to_extraction(f: BillFields) -> Extraction:
     """Customer and kind are left empty on purpose so the bot always asks."""
-    note = f"bill: {f.vendor}" if f.vendor else "bill"
-    return Extraction("add_unknown", customer=None, paise=f.paise, entry_date=f.bill_date, note=note,
-                      lang="en", missing=["customer", "kind"], maybe_expense=True)
+    return Extraction("add_unknown", customer=None, paise=f.paise, entry_date=f.bill_date, note="bill photo",
+                      lang="en", missing=["customer", "kind"], maybe_expense=True, vendor=f.vendor or "")
 
 
 def intro(f: BillFields) -> str:

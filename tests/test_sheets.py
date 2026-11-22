@@ -1,10 +1,10 @@
 from khata.ledger import Ledger
-from khata.sheets import SheetMirror
+from khata.sheets import HEADER, SheetMirror
 
 
 class FakeSheet:
     def __init__(self):
-        self.rows: list[list] = [["entry_id"]]       # header in row 1
+        self.rows: list[list] = [list(HEADER)]       # header in row 1
         self.fail_next = 0
         self.lose_response = False
 
@@ -25,7 +25,10 @@ class FakeSheet:
         return None
 
     def set_status(self, row, status):
-        self.rows[row - 1][6] = status
+        self.rows[row - 1][7] = status
+
+    def rewrite(self, rows):
+        self.rows = [list(r) for r in rows]
 
     def read_all(self):
         if self.fail_next:
@@ -46,10 +49,10 @@ def test_append_then_undo_marks_cancelled():
     m = SheetMirror(lg, sh, "o", Clock())
     lg.add_entry("o", "Ramesh", "credit", 50000)
     assert m.sync()["synced"] == 1
-    assert sh.rows[1][2:5] == ["Ramesh", "credit", 500.0] and sh.rows[1][6] == "active"
+    assert sh.rows[1][2:6] == ["credit", "Ramesh", "", 500.0] and sh.rows[1][7] == "active"
     lg.undo_last("o")
     m.sync()
-    assert len(sh.rows) == 2 and sh.rows[1][6] == "cancelled"
+    assert len(sh.rows) == 2 and sh.rows[1][7] == "cancelled"
     assert m.sync() == {"synced": 0, "failed": 0, "pending": 0}       # idempotent
 
 
@@ -81,7 +84,7 @@ def test_only_mirrors_its_owner():
     lg.add_entry("someone-else", "X", "credit", 100)
     lg.add_entry("o", "Y", "credit", 100)
     m.sync()
-    assert [r[2] for r in sh.rows[1:]] == ["Y"]
+    assert [r[3] for r in sh.rows[1:]] == ["Y"]
 
 
 def test_google_client_request_shapes():
@@ -95,7 +98,7 @@ def test_google_client_request_shapes():
     class Sess:
         calls = []
         def post(self, url, **kw):
-            self.calls.append(("post", url, kw)); return Resp({"updates": {"updatedRange": "Khata!A12:H12"}})
+            self.calls.append(("post", url, kw)); return Resp({"updates": {"updatedRange": "Khata!A12:I12"}})
         def get(self, url, **kw):
             self.calls.append(("get", url, kw)); return Resp({"values": [["entry_id"], ["7"], ["9"]]})
         def put(self, url, **kw):
@@ -107,9 +110,9 @@ def test_google_client_request_shapes():
     assert c.find(9) == 3 and c.find(8) is None
     c.set_status(3, "cancelled")
     post, put = c.s.calls[0], c.s.calls[-1]
-    assert post[1].endswith("/SHEET/values/Khata%21A%3AH:append")
+    assert post[1].endswith("/SHEET/values/Khata%21A%3AI:append")
     assert post[2]["params"]["valueInputOption"] == "RAW"
-    assert put[1].endswith("Khata%21G3") and put[2]["json"] == {"values": [["cancelled"]]}
+    assert put[1].endswith("Khata%21H3") and put[2]["json"] == {"values": [["cancelled"]]}
 
 
 def test_restore_after_disk_wipe_round_trip():
@@ -134,18 +137,20 @@ def test_restore_after_disk_wipe_round_trip():
     fresh.undo_last("shop")                            # undo after restore updates the same row
     new_id = fresh.add_entry("shop", "Mohan", "credit", 100)
     m2.sync()
-    assert new_id == 4 and sh.rows[2][6] == "cancelled" and [r[0] for r in sh.rows[1:]] == [1, 2, 3, 4]
+    assert new_id == 4 and sh.rows[2][7] == "cancelled" and [r[0] for r in sh.rows[1:]] == [1, 2, 3, 4]
 
 
 def test_restore_skips_bad_rows_and_nonempty_db():
     sh = FakeSheet()
+    sh.rows = [["entry_id"]]          # old-format sheet
     sh.rows += [[1, "2026-11-01", "Ramesh", "credit", 500, "", "active", ""],
                 [2, "2026-11-01", "Evil", "credit", -5, "", "active", ""],
                 [3, "not-a-date", "X", "credit", 5, "", "active", ""],
                 [4, "2026-11-01", "Y", "steal", 5, "", "active", ""],
                 ["", "", "", "", "", "", "", ""]]
     lg = Ledger()
-    assert SheetMirror(lg, sh, "shop", Clock()).boot() == {"restored": 1, "skipped": 3}
+    r = SheetMirror(lg, sh, "shop", Clock()).boot()
+    assert (r["restored"], r["skipped"]) == (1, 3)
     assert lg.balances("shop") == {"Ramesh": 50000}
     lg2 = Ledger()
     lg2.add_entry("demo-x", "A", "credit", 1)
@@ -154,6 +159,7 @@ def test_restore_skips_bad_rows_and_nonempty_db():
 
 def test_failed_restore_pauses_sync_instead_of_reusing_ids():
     sh = FakeSheet()
+    sh.rows = [["entry_id"]]
     sh.rows.append([1, "2026-11-01", "Ramesh", "credit", 500, "", "active", ""])
     sh.fail_next = 2
     lg = Ledger()
@@ -167,7 +173,7 @@ def test_new_sheet_gets_header():
     sh = FakeSheet()
     sh.rows = []
     assert SheetMirror(Ledger(), sh, "shop", Clock()).boot()["reason"] == "new sheet"
-    assert sh.rows[0][0] == "entry_id"
+    assert sh.rows[0] == HEADER
 
 
 def test_entry_ids_never_reused_after_delete():
@@ -176,3 +182,33 @@ def test_entry_ids_never_reused_after_delete():
     last = lg.add_entry("demo-x", "B", "credit", 1)
     lg.delete_owner_data("demo-x")
     assert lg.add_entry("shop", "A", "credit", 1) == last + 1
+
+
+def test_old_sheet_from_screenshot_restores_and_migrates():
+    """The real sheet before the column change: vendor was hidden in the note column."""
+    sh = FakeSheet()
+    sh.rows = [["entry_id", "date", "customer", "kind", "rupees", "due", "status", "source"],
+               [31, "2026-11-22", "Ramesh", "credit", 500, "", "cancelled"],
+               [32, "2026-11-22", "Ramesh", "credit", 1500, "", "active"],
+               [33, "2025-07-23", "Me", "payment", 4490, "", "cancelled"],
+               ["E2", "2025-07-23", "purchase", "expense", 4490, "", "active", "bill: GUJARAT FREIGHT TOOLS"],
+               [56, "2026-11-22", "Ramesh", "payment", 500, "", "active"]]
+    lg = Ledger()
+    m = SheetMirror(lg, sh, "shop", Clock())
+    r = m.boot()
+    assert (r["restored"], r["skipped"], r["migrated_rows"]) == (5, 0, 5)
+    assert lg.balance("shop", "Ramesh") == 100000
+    x = lg.expenses("shop")[0]
+    assert (x.vendor, x.category, x.paise) == ("GUJARAT FREIGHT TOOLS", "purchase", 449000)
+    assert sh.rows[0] == HEADER
+    by_id = {str(row[0]): row for row in sh.rows[1:]}
+    assert [str(row[1]) for row in sh.rows[1:]] == sorted(str(row[1]) for row in sh.rows[1:])
+    assert by_id["E2"] == ["E2", "2025-07-23", "expense", "GUJARAT FREIGHT TOOLS", "purchase", 4490.0, "",
+                          "active", "bill photo"]
+    assert m.sync() == {"synced": 0, "failed": 0, "pending": 0}       # nothing duplicated
+    lg.undo_last("shop")                                               # newest active = entry 56
+    m.sync()
+    assert {str(row[0]): row for row in sh.rows[1:]}["56"][7] == "cancelled"
+    fresh = Ledger()                                                   # and the new format restores too
+    assert SheetMirror(fresh, sh, "shop", Clock()).boot() == {"restored": 5, "skipped": 0}
+    assert fresh.expenses("shop")[0].vendor == "GUJARAT FREIGHT TOOLS"

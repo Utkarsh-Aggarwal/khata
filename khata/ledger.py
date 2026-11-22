@@ -58,6 +58,7 @@ class Expense:
     note: str
     entry_date: str
     status: str
+    vendor: str = ""
     kind: str = "expense"
 
 
@@ -83,6 +84,13 @@ class Ledger:
             cols = {r["name"] for r in self.db.execute("PRAGMA table_info(customers)")}
             if "phone" not in cols:                    # migration for databases made before phones
                 self.db.execute("ALTER TABLE customers ADD COLUMN phone TEXT")
+            xcols = {r["name"] for r in self.db.execute("PRAGMA table_info(expenses)")}
+            if "vendor" not in xcols:                  # who was paid: shop name on a bill, staff name
+                self.db.execute("ALTER TABLE expenses ADD COLUMN vendor TEXT DEFAULT ''")
+            # Expenses saved before the vendor column kept the shop name in the note as "bill: <shop>".
+            self.db.execute("UPDATE expenses SET vendor=TRIM(SUBSTR(note, 7)), note='bill photo' "
+                            "WHERE (vendor IS NULL OR vendor='') AND note LIKE 'bill: %'")
+            self.db.commit()
             self._rekey()
 
     def _rekey(self) -> None:
@@ -199,35 +207,39 @@ class Ledger:
             return self.get_entry(owner, e["id"])
 
     # ---- shop expenses ----------------------------------------------
-    def add_expense(self, owner: str, category: str, paise: int, *, note: str = "",
+    def add_expense(self, owner: str, category: str, paise: int, *, note: str = "", vendor: str = "",
                     entry_date: str | None = None, source: str = "text") -> int:
         if not isinstance(paise, int) or isinstance(paise, bool) or paise <= 0:
             raise LedgerError("amount must be positive integer paise")
         category = (category or "other").strip()[:40] or "other"
         with self.lock:
             cur = self.db.execute(
-                "INSERT INTO expenses(owner,category,paise,note,entry_date,source,created_at) "
-                "VALUES(?,?,?,?,?,?,?)",
-                (owner, category, paise, note, entry_date or date.today().isoformat(), source,
-                 datetime.now(timezone.utc).isoformat()))
+                "INSERT INTO expenses(owner,category,paise,note,vendor,entry_date,source,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                (owner, category, paise, note, (vendor or "").strip()[:60], entry_date or date.today().isoformat(),
+                 source, datetime.now(timezone.utc).isoformat()))
             self.db.commit()
             return cur.lastrowid
 
     @staticmethod
     def _expense(r) -> Expense:
-        return Expense(r["id"], r["category"], r["paise"], r["note"], r["entry_date"], r["status"])
+        return Expense(r["id"], r["category"], r["paise"], r["note"], r["entry_date"], r["status"],
+                       r["vendor"] or "")
 
     def get_expense(self, owner: str, expense_id: int) -> Expense | None:
         with self.lock:
             r = self.db.execute("SELECT * FROM expenses WHERE owner=? AND id=?", (owner, expense_id)).fetchone()
         return self._expense(r) if r else None
 
-    def expenses(self, owner: str, *, since: str | None = None,
+    def expenses(self, owner: str, *, since: str | None = None, until: str | None = None,
                  include_cancelled: bool = False) -> list[Expense]:
         q, args = "SELECT * FROM expenses WHERE owner=?", [owner]
         if since:
             q += " AND entry_date>=?"
             args.append(since)
+        if until:
+            q += " AND entry_date<=?"
+            args.append(until)
         if not include_cancelled:
             q += " AND status='active'"
         with self.lock:

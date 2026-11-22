@@ -16,21 +16,25 @@ from typing import Protocol
 
 from .ledger import Ledger
 
-HEADER = ["entry_id", "date", "customer", "kind", "rupees", "due", "status", "note"]
+# One row per record. "name" is the customer, or who was paid for an expense (shop on a bill,
+# staff for salary). "category" is only for expenses. Older sheets used OLD_HEADER; restore reads both.
+HEADER = ["id", "date", "type", "name", "category", "rupees", "due", "status", "note"]
+OLD_HEADER = ["entry_id", "date", "customer", "kind", "rupees", "due", "status"]
+STATUS_COL = "H"
+LAST_COL = "I"
 
 # Summary tab: live formulas over the Khata tab, so the sheet reads like a khata, not a log.
 SUMMARY = [
     ["Customer balances (positive = they owe you, negative = you owe them)", "", "", "",
      "Shop expenses by month", "", ""],
-    ['=IFERROR(QUERY(FILTER({Khata!C2:C, IF(Khata!D2:D="credit",1,-1)*Khata!E2:E}, Khata!G2:G="active", '
-     '(Khata!D2:D="credit")+(Khata!D2:D="payment")), "select Col1, sum(Col2) group by Col1 '
+    ['=IFERROR(QUERY(FILTER({Khata!D2:D, IF(Khata!C2:C="credit",1,-1)*Khata!F2:F}, Khata!H2:H="active", '
+     '(Khata!C2:C="credit")+(Khata!C2:C="payment")), "select Col1, sum(Col2) group by Col1 '
      'order by sum(Col2) desc label Col1 \'customer\', sum(Col2) \'balance (₹)\'", 0), "no customer entries yet")',
      "", "", "",
-     '=IFERROR(QUERY(FILTER({LEFT(Khata!B2:B,7), Khata!C2:C, Khata!E2:E}, Khata!G2:G="active", '
-     'Khata!D2:D="expense"), "select Col1, Col2, sum(Col3) group by Col1, Col2 order by Col1 desc '
+     '=IFERROR(QUERY(FILTER({LEFT(Khata!B2:B,7), Khata!E2:E, Khata!F2:F}, Khata!H2:H="active", '
+     'Khata!C2:C="expense"), "select Col1, Col2, sum(Col3) group by Col1, Col2 order by Col1 desc '
      'label Col1 \'month\', Col2 \'category\', sum(Col3) \'spent (₹)\'", 0), "no expenses yet")'],
 ]
-STATUS_COL = "G"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sheet_sync(
@@ -65,12 +69,12 @@ class GoogleSheetClient:
         return f"{self.API}/{self.id}/values/{quote(f'{self.tab}!{rng}')}{suffix}"
 
     def append(self, row):
-        r = self.s.post(self._url("A:H", ":append"), timeout=20,
+        r = self.s.post(self._url(f"A:{LAST_COL}", ":append"), timeout=20,
                         params={"valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"},
                         json={"values": [row]})
         r.raise_for_status()
-        rng = r.json()["updates"]["updatedRange"]           # e.g. Khata!A12:H12
-        return int(rng.split("!")[1].split(":")[0].lstrip("ABCDEFGH"))
+        rng = r.json()["updates"]["updatedRange"]           # e.g. Khata!A12:I12
+        return int(re.sub(r"[A-Z]", "", rng.split("!")[1].split(":")[0]))
 
     def find(self, entry_id):
         r = self.s.get(self._url("A:A"), timeout=20)
@@ -86,26 +90,47 @@ class GoogleSheetClient:
         r.raise_for_status()
 
     def read_all(self):
-        r = self.s.get(self._url("A:H"), timeout=30, params={"valueRenderOption": "UNFORMATTED_VALUE"})
+        r = self.s.get(self._url(f"A:{LAST_COL}"), timeout=30, params={"valueRenderOption": "UNFORMATTED_VALUE"})
         r.raise_for_status()
         return r.json().get("values", [])
 
+    def rewrite(self, rows: list[list]) -> None:
+        """Replace the whole Khata tab (used once, to move an old sheet to the new columns)."""
+        self.s.post(self._url("A:Z", ":clear"), timeout=20, json={}).raise_for_status()
+        self.s.put(self._url(f"A1:{LAST_COL}{len(rows)}"), params={"valueInputOption": "RAW"},
+                   json={"values": rows}, timeout=30).raise_for_status()
+
     def ensure_layout(self):
-        """Fix an old 'source' header to 'note', and add the Summary tab of live formulas once."""
-        r = self.s.get(self._url("H1"), timeout=20)
-        r.raise_for_status()
-        if (r.json().get("values") or [[""]])[0][:1] == ["source"]:
-            self.s.put(self._url("H1"), params={"valueInputOption": "RAW"},
-                       json={"values": [["note"]]}, timeout=20).raise_for_status()
+        """Add (or refresh) the Summary tab of live formulas."""
+        from urllib.parse import quote
         meta = self.s.get(f"{self.API}/{self.id}", params={"fields": "sheets.properties.title"}, timeout=20)
         meta.raise_for_status()
-        if "Summary" in {s["properties"]["title"] for s in meta.json().get("sheets", [])}:
-            return
-        self.s.post(f"{self.API}/{self.id}:batchUpdate", timeout=20, json={"requests": [
-            {"addSheet": {"properties": {"title": "Summary"}}}]}).raise_for_status()
-        from urllib.parse import quote
+        if "Summary" not in {sh["properties"]["title"] for sh in meta.json().get("sheets", [])}:
+            self.s.post(f"{self.API}/{self.id}:batchUpdate", timeout=20, json={"requests": [
+                {"addSheet": {"properties": {"title": "Summary"}}}]}).raise_for_status()
         self.s.put(f"{self.API}/{self.id}/values/{quote('Summary!A1:G2')}", timeout=20,
                    params={"valueInputOption": "USER_ENTERED"}, json={"values": SUMMARY}).raise_for_status()
+
+
+def _money(v) -> int:
+    return round(float(str(v).replace(",", "").replace("₹", "")) * 100)
+
+
+def _parse_new(r: list) -> tuple:
+    # id, date, type, name, category, rupees, due, status, note
+    return (str(r[0]).strip(), str(r[2]).strip(), str(r[1])[:10], str(r[3]).strip(), str(r[4]).strip(),
+            _money(r[5]), str(r[6])[:10] or None, str(r[7]).strip() or "active", str(r[8]))
+
+
+def _parse_old(r: list) -> tuple:
+    # entry_id, date, customer (or category), kind, rupees, due, status, note (bill vendor for expenses)
+    sid, kind, note = str(r[0]).strip(), str(r[3]).strip(), str(r[7])
+    if kind == "expense":
+        vendor = note[6:].strip() if note.startswith("bill: ") else ""
+        return sid, kind, str(r[1])[:10], vendor, str(r[2]).strip(), _money(r[4]), None, \
+            str(r[6]).strip() or "active", "bill photo" if vendor else note
+    return sid, kind, str(r[1])[:10], str(r[2]).strip(), "", _money(r[4]), str(r[5])[:10] or None, \
+        str(r[6]).strip() or "active", note
 
 
 class SheetMirror:
@@ -123,6 +148,7 @@ class SheetMirror:
             try:
                 self.boot_result = self.restore()
                 self.paused = False
+                self._migrate_layout()
                 layout = getattr(self.client, "ensure_layout", None)
                 if layout:
                     try:
@@ -152,67 +178,78 @@ class SheetMirror:
         if not rows:
             self.client.append(HEADER)            # brand-new sheet: label the columns
             return {"restored": 0, "skipped": 0, "reason": "new sheet"}
+        new = [str(c).strip().lower() for c in rows[0][:3]] == ["id", "date", "type"]
         restored = skipped = 0
-        today = time.strftime("%Y-%m-%d")
         with self.ledger.lock:
             for i, row in enumerate(rows, start=1):
-                row = list(row) + [""] * (8 - len(row))
-                if str(row[0]).strip().lower() in ("", "entry_id"):
+                row = list(row) + [""] * (9 - len(row))
+                if i == 1 or not str(row[0]).strip():
                     continue
                 try:
-                    if str(row[0]).strip().upper().startswith("E"):
-                        self._restore_expense(i, row)
-                        restored += 1
-                        continue
-                    entry_id = int(float(row[0]))
-                    entry_date, customer, kind = str(row[1])[:10], str(row[2]).strip(), str(row[3]).strip()
-                    paise = round(float(str(row[4]).replace(",", "")) * 100)
-                    due, status = (str(row[5])[:10] or None), (str(row[6]).strip() or "active")
-                    if (kind not in ("credit", "payment") or status not in ("active", "cancelled")
-                            or not 0 < paise <= 10**9 or not customer
-                            or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", entry_date)
-                            or (due and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", due))):
-                        raise ValueError(row)
-                    cid = self.ledger.get_or_create_customer(self.owner, customer)
-                    self.ledger.db.execute(
-                        "INSERT INTO entries(id,owner,customer_id,kind,paise,note,entry_date,due_date,status,"
-                        "source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                        (entry_id, self.owner, cid, kind, paise, "", entry_date, due, status, "sheet",
-                         today + "T00:00:00+00:00"))
-                    self.ledger.db.execute(
-                        "INSERT OR REPLACE INTO sheet_sync(entry_id,owner,row,synced_status,attempts,next_at) "
-                        "VALUES(?,?,?,?,0,0)", (entry_id, self.owner, i, status))
+                    self._restore_row(i, *(_parse_new(row) if new else _parse_old(row)))
                     restored += 1
                 except (ValueError, TypeError, sqlite3.IntegrityError):
                     skipped += 1
             self.ledger.db.commit()
         return {"restored": restored, "skipped": skipped}
 
-    def _restore_expense(self, i: int, row: list) -> None:
-        """Rows like ["E12", date, category, "expense", rupees, "", status, note]. Caller holds the lock."""
-        xid = int(str(row[0]).strip()[1:])
-        entry_date, category, kind = str(row[1])[:10], str(row[2]).strip(), str(row[3]).strip()
-        paise = round(float(str(row[4]).replace(",", "")) * 100)
-        status = str(row[6]).strip() or "active"
-        if (kind != "expense" or status not in ("active", "cancelled") or not 0 < paise <= 10**9
-                or not category or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", entry_date) or xid <= 0):
-            raise ValueError(row)
-        self.ledger.db.execute(
-            "INSERT INTO expenses(id,owner,category,paise,note,entry_date,status,source,created_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?)",
-            (xid, self.owner, category[:40], paise, str(row[7])[:200], entry_date, status, "sheet",
-             entry_date + "T00:00:00+00:00"))
+    def _restore_row(self, i, sid, kind, entry_date, name, category, paise, due, status, note) -> None:
+        """Validate and insert one row with its original id. Caller holds the lock."""
+        ok_date = re.fullmatch(r"\d{4}-\d{2}-\d{2}", entry_date)
+        if (kind not in ("credit", "payment", "expense") or status not in ("active", "cancelled")
+                or not 0 < paise <= 10**9 or not ok_date or (due and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", due))):
+            raise ValueError(sid)
+        created = entry_date + "T00:00:00+00:00"
+        if kind == "expense":
+            xid = int(str(sid).strip()[1:])
+            if xid <= 0 or not category:
+                raise ValueError(sid)
+            self.ledger.db.execute(
+                "INSERT INTO expenses(id,owner,category,paise,note,vendor,entry_date,status,source,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (xid, self.owner, category[:40], paise, note[:200], name[:60], entry_date, status, "sheet", created))
+            key = -xid
+        else:
+            key = int(float(sid))
+            if not name:
+                raise ValueError(sid)
+            cid = self.ledger.get_or_create_customer(self.owner, name)
+            self.ledger.db.execute(
+                "INSERT INTO entries(id,owner,customer_id,kind,paise,note,entry_date,due_date,status,"
+                "source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (key, self.owner, cid, kind, paise, note[:200], entry_date, due, status, "sheet", created))
         self.ledger.db.execute(
             "INSERT OR REPLACE INTO sheet_sync(entry_id,owner,row,synced_status,attempts,next_at) "
-            "VALUES(?,?,?,?,0,0)", (-xid, self.owner, i, status))
+            "VALUES(?,?,?,?,0,0)", (key, self.owner, i, status))
+
+    def _migrate_layout(self, force: bool = False) -> None:
+        """An old-format sheet is rewritten once in the new columns, from the database.
+        `force` rewrites a new-format sheet too (after a data fix in the database)."""
+        read = getattr(self.client, "read_all", None)
+        rewrite = getattr(self.client, "rewrite", None)
+        if not read or not rewrite:
+            return
+        rows = read()
+        if not rows or (not force and [str(c).strip().lower() for c in rows[0][:3]] == ["id", "date", "type"]):
+            return
+        recs = sorted(self._records(), key=lambda r: (str(r[3][1]), r[1]))   # by date
+        rewrite([HEADER] + [r[3] for r in recs])
+        with self.ledger.lock:
+            self.ledger.db.execute("DELETE FROM sheet_sync WHERE owner=?", (self.owner,))
+            for n, (key, _, status, _) in enumerate(recs, start=2):
+                self.ledger.db.execute(
+                    "INSERT INTO sheet_sync(entry_id,owner,row,synced_status,attempts,next_at) VALUES(?,?,?,?,0,0)",
+                    (key, self.owner, n, status))
+            self.ledger.db.commit()
+        self.boot_result = {**self.boot_result, "migrated_rows": len(recs)}
 
     def _records(self) -> list[tuple[int, str, str, list]]:
         """Everything mirrored: (sync key, sheet id, status, row). Expenses use negative keys."""
-        out = [(e.id, str(e.id), e.status, [e.id, e.entry_date, e.customer, e.kind, e.paise / 100,
+        out = [(e.id, str(e.id), e.status, [e.id, e.entry_date, e.kind, e.customer, "", e.paise / 100,
                                             e.due_date or "", e.status, e.note or ""])
                for e in self.ledger.entries(self.owner, include_cancelled=True)]
-        out += [(-x.id, f"E{x.id}", x.status, [f"E{x.id}", x.entry_date, x.category, "expense", x.paise / 100,
-                                               "", x.status, x.note])
+        out += [(-x.id, f"E{x.id}", x.status, [f"E{x.id}", x.entry_date, "expense", x.vendor, x.category,
+                                               x.paise / 100, "", x.status, x.note or ""])
                 for x in self.ledger.expenses(self.owner, include_cancelled=True)]
         return out
 

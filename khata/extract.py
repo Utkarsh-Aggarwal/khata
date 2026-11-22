@@ -214,6 +214,8 @@ class Extraction:
     lang: str = "en"
     missing: list[str] = field(default_factory=list)
     category: str | None = None        # add_expense only
+    vendor: str = ""                   # add_expense: who was paid (shop on a bill, staff for salary)
+    period: str = "month"              # expense_report: "today" or "month"
     maybe_expense: bool = False        # "maine bill bhara" or a bill photo: a person's, or the shop's?
 
 
@@ -337,11 +339,12 @@ def extract(text: str, today: date | None = None) -> Extraction:
     explicit = bool(s & EXPENSE_W)
     udhaar = s & {"udhaar", "udhar", "udhari", "उधार", "उधारी", "ਉਧਾਰ", "ਉਧਾਰੀ", "credit", "owes", "borrowed"}
     if explicit and paise is None and not udhaar:
-        return Extraction("expense_report", lang=lang)
+        today_w = {"aaj", "आज", "ਅੱਜ", "today", "todays", "today's"}
+        return Extraction("expense_report", lang=lang, period="today" if s & today_w else "month")
     if paise is not None and (explicit or (cat and (customer is None or cat in PERSON_OK_CATEGORIES))) \
             and not udhaar:
-        note = customer if customer and cat in PERSON_OK_CATEGORIES else ""
-        return Extraction("add_expense", paise=paise, lang=lang, category=cat or "other", note=note,
+        vendor = customer if customer and cat in PERSON_OK_CATEGORIES else ""
+        return Extraction("add_expense", paise=paise, lang=lang, category=cat or "other", vendor=vendor,
                           entry_date=_rel_date(s, today, past=True))
 
     # direction

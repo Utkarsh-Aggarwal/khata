@@ -21,6 +21,7 @@ from .export import build_xlsx
 from .flow import Bot
 from .sheets import from_env as sheet_from_env
 from .whatsapp import make_router, owner_for
+from .telegram import MENU as TG_MENU
 from .telegram import (Poller, TelegramAdapter, TelegramAPI, make_router as tg_router, owner_for_chat,
                        parse_allowed, webhook_token)
 from .guard import PaidGuard
@@ -74,6 +75,11 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
     @asynccontextmanager
     async def lifespan(_app):
         mode, poller = tg_state.get("mode"), None
+        if mode:
+            try:                         # the "/" menu in Telegram; cosmetic, never blocks startup
+                await asyncio.to_thread(tg_state["api"].set_commands, TG_MENU)
+            except Exception:
+                pass
         try:
             if mode == "polling":
                 poller = Poller(tg_state["adapter"], tg_state["api"])

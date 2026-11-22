@@ -26,6 +26,11 @@ KIND_CREDIT = {"credit", "udhaar", "udhar", "उधार", "ਉਧਾਰ", "�
                "diya", "diye", "दिए", "lent", "returned", "lautaye", "लौटाए", "bhara", "भरा"}
 DOUBT_EXACT = {"?", "??", "kya", "kya?", "matlab", "matlab?", "samjhao", "explain", "what", "what?", "help me",
                "क्या", "क्या?", "मतलब", "मतलब?", "समझाओ", "ਕੀ", "ਕੀ?", "ਮਤਲਬ", "confused", "not sure", "pata nahi"}
+# Whole-message commands
+DUES_W = {"dues", "/dues", "udhaar", "/udhaar", "udhar", "lena dena", "lena-dena", "len den", "hisaab", "/hisaab",
+          "hisab", "sab ka hisaab", "उधार", "लेन देन", "लेन-देन", "हिसाब", "ਉਧਾਰ", "ਹਿਸਾਬ", "ਲੈਣ ਦੇਣ"}
+TODAY_W = {"today", "/today", "aaj", "/aaj", "aaj ka kharcha", "aaj ka kharch", "today's expenses",
+           "todays expenses", "आज", "आज का खर्च", "आज का खर्चा", "ਅੱਜ", "ਅੱਜ ਦਾ ਖਰਚਾ"}
 EXPENSE_ANSWER = {"expense", "kharcha", "kharch", "shop", "dukaan", "dukan", "mera", "meri", "apna", "apni",
                   "khud", "🧾", "खर्च", "खर्चा", "दुकान", "मेरा", "अपना", "ਖਰਚਾ", "ਦੁਕਾਨ", "ਮੇਰਾ", "mine", "my",
                   "me", "myself", "self", "i", "main", "mai", "mujhe", "maine", "hum", "hamara", "humara", "ours",
@@ -64,6 +69,19 @@ M = {
                       "pa": "ਸੇਵ ਹੋ ਗਿਆ 🧾 {cat} {amt}। ਇਸ ਮਹੀਨੇ ਦਾ ਖਰਚਾ: {month}।"},
     "expense_report": {"en": "🧾 Shop expenses this month: {month}", "hi": "🧾 इस महीने दुकान का खर्च: {month}",
                        "pa": "🧾 ਇਸ ਮਹੀਨੇ ਦੁਕਾਨ ਦਾ ਖਰਚਾ: {month}"},
+    "today_report": {"en": "🧾 Today's shop expenses: {total}", "hi": "🧾 आज का दुकान खर्च: {total}",
+                     "pa": "🧾 ਅੱਜ ਦਾ ਦੁਕਾਨ ਖਰਚਾ: {total}"},
+    "no_expenses_today": {"en": "No shop expenses recorded today.", "hi": "आज कोई खर्च दर्ज नहीं।",
+                          "pa": "ਅੱਜ ਕੋਈ ਖਰਚਾ ਦਰਜ ਨਹੀਂ।"},
+    "dues_get": {"en": "📤 Udhaar you gave (they owe you): {total}", "hi": "📤 आपने उधार दिया (आपको मिलना है): {total}",
+                 "pa": "📤 ਤੁਸੀਂ ਉਧਾਰ ਦਿੱਤਾ (ਤੁਹਾਨੂੰ ਮਿਲਣਾ ਹੈ): {total}"},
+    "dues_owe": {"en": "📥 Udhaar you took (you owe them): {total}", "hi": "📥 आपने उधार लिया (आपको देना है): {total}",
+                 "pa": "📥 ਤੁਸੀਂ ਉਧਾਰ ਲਿਆ (ਤੁਸੀਂ ਦੇਣਾ ਹੈ): {total}"},
+    "dues_net_get": {"en": "Net: you will receive {amt}.", "hi": "कुल मिलाकर: आपको {amt} मिलने हैं।",
+                     "pa": "ਕੁੱਲ: ਤੁਹਾਨੂੰ {amt} ਮਿਲਣੇ ਹਨ।"},
+    "dues_net_owe": {"en": "Net: you have to pay {amt}.", "hi": "कुल मिलाकर: आपको {amt} देने हैं।",
+                     "pa": "ਕੁੱਲ: ਤੁਸੀਂ {amt} ਦੇਣੇ ਹਨ।"},
+    "dues_net_zero": {"en": "Net: all square.", "hi": "कुल मिलाकर: हिसाब बराबर।", "pa": "ਕੁੱਲ: ਹਿਸਾਬ ਬਰਾਬਰ।"},
     "no_expenses": {"en": "No shop expenses recorded this month. Try: 'bijli ka bill 900'.",
                     "hi": "इस महीने कोई खर्च दर्ज नहीं। लिखें: 'बिजली का बिल 900'।",
                     "pa": "ਇਸ ਮਹੀਨੇ ਕੋਈ ਖਰਚਾ ਦਰਜ ਨਹੀਂ। ਲਿਖੋ: 'ਬਿਜਲੀ ਦਾ ਬਿੱਲ 900'।"},
@@ -186,6 +204,10 @@ class Bot:
         low = text.lower().strip()
         if set(low.replace("/", " ").split()) & REMIND_W:
             return self._remind(owner, extract(text).lang)
+        if low in DUES_W:
+            return self._r(self._dues(owner, extract(text).lang))
+        if low in TODAY_W:
+            return self._r(self._today_report(owner, extract(text).lang))
         if low in ("export", "/export", "एक्सपोर्ट", "ਐਕਸਪੋਰਟ"):
             lang = extract(text).lang
             if source == "telegram":
@@ -205,22 +227,18 @@ class Bot:
                     else f"{e.customer} {format_rupees(e.paise)} ({e.kind})")
             return self._r(self.say("undone", lang, what=what), changed=True)
         if ex.intent == "expense_report":
+            if ex.period == "today":
+                return self._r(self._today_report(owner, lang))
             return self._r(self._expense_report(owner, lang))
         if ex.intent == "list":
-            b = {k: v for k, v in self.ledger.balances(owner).items() if v}
-            if not b:
-                return self._r(self.say("nobody", lang))
-            return self._r("\n".join(f"{k}: {format_rupees(v)}" for k, v in b.items()))
+            return self._r(self._dues(owner, lang))
         if ex.intent == "balance":
             if ex.customer:
                 real = self.ledger.find_customer(owner, ex.customer)
                 if real:
                     return self._r(self.say("balance", lang,
                                             after=self._after(lang, real, self.ledger.balance(owner, real))))
-            b = {k: v for k, v in self.ledger.balances(owner).items() if v}
-            if not b:
-                return self._r(self.say("nobody", lang))
-            return self._r("\n".join(f"{k}: {format_rupees(v)}" for k, v in b.items()))
+            return self._r(self._dues(owner, lang))
         if ex.intent in ("add_credit", "add_payment", "add_unknown", "add_expense"):
             if ex.customer:
                 real = self.ledger.find_customer(owner, ex.customer)
@@ -279,6 +297,37 @@ class Bot:
             return category or "other"
         return names[{"en": 0, "hi": 1, "pa": 2}[L(lang)]]
 
+    def _today_report(self, owner: str, lang: str) -> str:
+        today = date.today().isoformat()
+        xs = self.ledger.expenses(owner, since=today, until=today)
+        if not xs:
+            return self.say("no_expenses_today", lang)
+        lines = [self.say("today_report", lang, total=format_rupees(sum(x.paise for x in xs)))]
+        lines += [f"• {self._cat(lang, x.category)} {format_rupees(x.paise)}" + (f" ({x.vendor})" if x.vendor else "")
+                  for x in xs]
+        return "\n".join(lines)
+
+    def _dues(self, owner: str, lang: str) -> str:
+        """Who owes you (udhaar you gave) and whom you owe (udhaar you took), with totals."""
+        b = {k: v for k, v in self.ledger.balances(owner).items() if v}
+        if not b:
+            return self.say("nobody", lang)
+        give = [(k, v) for k, v in b.items() if v > 0]
+        take = sorted(((k, -v) for k, v in b.items() if v < 0), key=lambda kv: -kv[1])
+        lines = []
+        if give:
+            lines.append(self.say("dues_get", lang, total=format_rupees(sum(v for _, v in give))))
+            lines += [f"• {k} {format_rupees(v)}" for k, v in give]
+        if take:
+            if lines:
+                lines.append("")
+            lines.append(self.say("dues_owe", lang, total=format_rupees(sum(v for _, v in take))))
+            lines += [f"• {k} {format_rupees(v)}" for k, v in take]
+        net = sum(b.values())
+        lines += ["", self.say("dues_net_get" if net > 0 else "dues_net_owe" if net < 0 else "dues_net_zero", lang,
+                               amt=format_rupees(abs(net)))]
+        return "\n".join(lines)
+
     def _month_total(self, owner: str) -> int:
         return sum(self.ledger.expense_totals(owner, date.today().replace(day=1).isoformat()).values())
 
@@ -331,7 +380,7 @@ class Bot:
             if ex.paise is None:
                 p.awaiting = "amount"; return self._r(self.say("ask_amount", lang))
             p.awaiting = "confirm"
-            note = f": {ex.note}" if ex.note else ""
+            note = f": {ex.vendor}" if ex.vendor else ""
             month = format_rupees(self._month_total(owner) + ex.paise)
             return self._r(self.say("confirm_expense", lang, amt=format_rupees(ex.paise), cat=self._cat(lang, ex.category),
                                     note=note, month=month), buttons=["yes", "no"], pending=True)
@@ -398,7 +447,7 @@ class Bot:
         # confirm stage
         if low in YES and ex.intent == "add_expense":
             x_id = self.ledger.add_expense(owner, ex.category or "other", ex.paise, note=ex.note,
-                                           entry_date=ex.entry_date, source=p.source)
+                                           vendor=ex.vendor, entry_date=ex.entry_date, source=p.source)
             del self.pending[owner]
             return self._r(self.say("saved_expense", lang, cat=self._cat(lang, ex.category), amt=format_rupees(ex.paise),
                                     month=format_rupees(self._month_total(owner))), changed=True, expense_id=x_id)

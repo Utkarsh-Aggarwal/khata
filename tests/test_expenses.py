@@ -65,7 +65,7 @@ def test_salary_keeps_who_in_note():
     b.handle("o", "Raju ko 3000 salary di")
     b.handle("o", "yes")
     x = lg.expenses("o")[0]
-    assert (x.category, x.paise, x.note) == ("salary", 300000, "Raju")
+    assert (x.category, x.paise, x.vendor) == ("salary", 300000, "Raju")
     assert lg.balances("o") == {}                          # Raju is staff, not a customer
 
 
@@ -94,7 +94,7 @@ def test_bill_photo_can_be_shop_purchase():
     b.handle("o", "🧾")
     b.handle("o", "yes")
     x = lg.expenses("o")[0]
-    assert (x.category, x.paise) == ("purchase", 84650) and "Sharma" in x.note
+    assert (x.category, x.paise, x.vendor) == ("purchase", 84650, "Sharma Kirana Store")
 
 
 def test_undo_takes_back_the_newest_of_either():
@@ -144,7 +144,7 @@ def test_sheet_mirror_and_restore_expenses():
     lg.undo_last("shop")                                   # cancels the tea expense
     m.sync()
     assert [r[0] for r in sh.rows[1:]] == [1, "E1", "E2"]
-    assert sh.rows[3][3] == "expense" and sh.rows[3][6] == "cancelled"
+    assert sh.rows[3][2:5] == ["expense", "", "tea"] and sh.rows[3][7] == "cancelled"
     assert m.sync() == {"synced": 0, "failed": 0, "pending": 0}
 
     fresh = Ledger()                                       # disk wiped
@@ -190,4 +190,41 @@ def test_sheet_note_column_and_layout_hook():
     assert calls == [1]
     lg.add_entry("shop", "Ramesh", "credit", 100, note="bill: Gupta Store")
     m.sync()
-    assert sh.rows[-1][7] == "bill: Gupta Store"
+    assert sh.rows[-1][8] == "bill: Gupta Store"
+
+
+
+def test_dues_command_splits_given_and_taken():
+    lg = Ledger()
+    b = Bot(lg)
+    lg.add_entry("o", "Ramesh", "credit", 150000)
+    lg.add_entry("o", "Gupta", "credit", 250000)
+    lg.add_entry("o", "Sita", "payment", 50000)          # Sita paid in advance: you owe her
+    r = b.handle("o", "/dues")["reply"]
+    assert "Udhaar you gave (they owe you): ₹4,000" in r and "• Gupta ₹2,500" in r
+    assert "Udhaar you took (you owe them): ₹500" in r and "• Sita ₹500" in r
+    assert "you will receive ₹3,500" in r
+    assert "आपने उधार दिया" in b.handle("o", "हिसाब")["reply"]
+    assert "Udhaar you gave" in b.handle("o", "list")["reply"]
+
+
+def test_today_command_lists_todays_expenses_only():
+    lg = Ledger()
+    b = Bot(lg)
+    assert "No shop expenses recorded today" in b.handle("o", "today")["reply"]
+    lg.add_expense("o", "electricity", 90000)
+    lg.add_expense("o", "purchase", 449000, vendor="GUJARAT FREIGHT TOOLS")
+    lg.add_expense("o", "rent", 800000, entry_date="2020-01-01")
+    r = b.handle("o", "aaj ka kharcha")["reply"]
+    assert "₹5,390" in r and "(GUJARAT FREIGHT TOOLS)" in r and "₹8,000" not in r
+    assert "₹5,390" in b.handle("o", "/today")["reply"]
+
+
+def test_old_bill_note_moves_into_vendor_on_open(tmp_path):
+    db = str(tmp_path / "k.db")
+    lg = Ledger(db)
+    lg.db.execute("INSERT INTO expenses(owner,category,paise,note,vendor,entry_date,created_at) "
+                  "VALUES('o','purchase',449000,'bill: GUJARAT FREIGHT TOOLS','','2025-07-23','2025-07-23')")
+    lg.db.commit()
+    x = Ledger(db).expenses("o")[0]
+    assert (x.vendor, x.note) == ("GUJARAT FREIGHT TOOLS", "bill photo")
