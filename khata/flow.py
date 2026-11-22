@@ -64,6 +64,16 @@ M = {
                               "इस महीने का कुल खर्च {month} होगा। हाँ / नहीं, या नई रकम भेजें।",
                         "pa": "ਸੇਵ ਕਰਾਂ: 🧾 ਦੁਕਾਨ ਦਾ ਖਰਚਾ {amt} ({cat}){note}? ਕਿਸੇ ਗਾਹਕ ਦਾ ਹਿਸਾਬ ਨਹੀਂ ਬਦਲੇਗਾ। "
                               "ਇਸ ਮਹੀਨੇ ਦਾ ਕੁੱਲ ਖਰਚਾ {month} ਹੋਵੇਗਾ। ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਭੇਜੋ।"},
+    "confirm_expense_dated": {
+        "en": "Save: 🧾 shop expense {amt} ({cat}){note}, dated {date} from the bill? It counts in {month_name}, not this "
+              "month. Reply yes / no, or 'today' if you paid it today.",
+        "hi": "सेव करूँ: 🧾 दुकान का खर्च {amt} ({cat}){note}, बिल की तारीख {date}? यह {month_name} में गिना जाएगा, इस "
+              "महीने में नहीं। हाँ / नहीं, या आज भरा हो तो 'आज' भेजें।",
+        "pa": "ਸੇਵ ਕਰਾਂ: 🧾 ਦੁਕਾਨ ਦਾ ਖਰਚਾ {amt} ({cat}){note}, ਬਿੱਲ ਦੀ ਤਾਰੀਖ {date}? ਇਹ {month_name} ਵਿੱਚ ਗਿਣਿਆ ਜਾਵੇਗਾ। "
+              "ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਅੱਜ ਭਰਿਆ ਹੋਵੇ ਤਾਂ 'ਅੱਜ' ਭੇਜੋ।"},
+    "saved_expense_dated": {"en": "Saved 🧾 {cat} {amt}, dated {date} ({month_name}).",
+                            "hi": "सेव हो गया 🧾 {cat} {amt}, तारीख {date} ({month_name})।",
+                            "pa": "ਸੇਵ ਹੋ ਗਿਆ 🧾 {cat} {amt}, ਤਾਰੀਖ {date} ({month_name})।"},
     "saved_expense": {"en": "Saved 🧾 {cat} {amt}. This month's expenses: {month}.",
                       "hi": "सेव हो गया 🧾 {cat} {amt}। इस महीने का खर्च: {month}।",
                       "pa": "ਸੇਵ ਹੋ ਗਿਆ 🧾 {cat} {amt}। ਇਸ ਮਹੀਨੇ ਦਾ ਖਰਚਾ: {month}।"},
@@ -157,6 +167,13 @@ M = {
 
 def L(lang: str) -> str:
     return "hi" if lang in ("hi", "hinglish") else ("pa" if lang == "pa" else "en")
+
+
+def _month_name(d: str) -> str:
+    try:
+        return date.fromisoformat(d).strftime("%B %Y")
+    except ValueError:
+        return d
 
 
 @dataclass
@@ -328,6 +345,10 @@ class Bot:
                                amt=format_rupees(abs(net)))]
         return "\n".join(lines)
 
+    @staticmethod
+    def _this_month(d: str | None) -> bool:
+        return not d or d[:7] == date.today().isoformat()[:7]
+
     def _month_total(self, owner: str) -> int:
         return sum(self.ledger.expense_totals(owner, date.today().replace(day=1).isoformat()).values())
 
@@ -381,6 +402,11 @@ class Bot:
                 p.awaiting = "amount"; return self._r(self.say("ask_amount", lang))
             p.awaiting = "confirm"
             note = f": {ex.vendor}" if ex.vendor else ""
+            if not self._this_month(ex.entry_date):        # e.g. an old bill photographed now
+                return self._r(self.say("confirm_expense_dated", lang, amt=format_rupees(ex.paise),
+                                        cat=self._cat(lang, ex.category), note=note, date=ex.entry_date,
+                                        month_name=_month_name(ex.entry_date)),
+                               buttons=["yes", "no", "today"], pending=True)
             month = format_rupees(self._month_total(owner) + ex.paise)
             return self._r(self.say("confirm_expense", lang, amt=format_rupees(ex.paise), cat=self._cat(lang, ex.category),
                                     note=note, month=month), buttons=["yes", "no"], pending=True)
@@ -449,8 +475,15 @@ class Bot:
             x_id = self.ledger.add_expense(owner, ex.category or "other", ex.paise, note=ex.note,
                                            vendor=ex.vendor, entry_date=ex.entry_date, source=p.source)
             del self.pending[owner]
+            if not self._this_month(ex.entry_date):
+                return self._r(self.say("saved_expense_dated", lang, cat=self._cat(lang, ex.category),
+                                        amt=format_rupees(ex.paise), date=ex.entry_date,
+                                        month_name=_month_name(ex.entry_date)), changed=True, expense_id=x_id)
             return self._r(self.say("saved_expense", lang, cat=self._cat(lang, ex.category), amt=format_rupees(ex.paise),
                                     month=format_rupees(self._month_total(owner))), changed=True, expense_id=x_id)
+        if ex.intent == "add_expense" and low in TODAY_W:
+            ex.entry_date = None                              # paid today: date it today
+            return self._advance(owner, p)
         if ex.intent == "add_expense":
             amt, _ = parse_amount(text)
             if amt is not None and len(low.split()) <= 3:

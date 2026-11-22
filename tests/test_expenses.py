@@ -228,3 +228,21 @@ def test_old_bill_note_moves_into_vendor_on_open(tmp_path):
     lg.db.commit()
     x = Ledger(db).expenses("o")[0]
     assert (x.vendor, x.note) == ("GUJARAT FREIGHT TOOLS", "bill photo")
+
+
+def test_old_bill_date_is_stated_and_today_redates_it():
+    """Real chat: a 2025-01-10 bill was confirmed as 'This month's expenses would be ₹38,026'."""
+    from khata.bills import BillFields
+    lg = Ledger()
+    b = Bot(lg)
+    b.start_from_extraction("o", to_extraction(BillFields("SUNRISE ENTERPRISE", 3802600, "2025-01-10")), "bill")
+    r = b.handle("o", "expense")
+    assert "2025-01-10" in r["reply"] and "January 2025" in r["reply"] and "this month's" not in r["reply"].lower()
+    assert r["buttons"] == ["yes", "no", "today"]
+    r = b.handle("o", "today")                         # paid today
+    assert "This month's expenses would be ₹38,026" in r["reply"]
+    b.handle("o", "yes")
+    assert lg.expenses("o")[0].entry_date == date.today().isoformat()
+    b.start_from_extraction("o", to_extraction(BillFields("SUNRISE ENTERPRISE", 100, "2025-01-10")), "bill")
+    b.handle("o", "expense")
+    assert "January 2025" in b.handle("o", "yes")["reply"]
