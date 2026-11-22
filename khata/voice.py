@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -36,6 +37,9 @@ STT_PROMPT = ("Khata entries in Hindi, Punjabi, Hinglish or English. Ramesh ko 5
               "Sita ne 200 diye. रमेश को पाँच सौ रुपये उधार। ਸੀਤਾ ਨੇ 300 ਜਮ੍ਹਾ ਕਰਾਏ। dedh sau, dhai hazaar.")
 
 
+URDU_SCRIPT = re.compile(r"[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]")
+
+
 class OpenAICompatTranscriber:
     """Defaults to Groq's free tier (whisper-large-v3). Works with any OpenAI-compatible STT."""
 
@@ -45,12 +49,23 @@ class OpenAICompatTranscriber:
         self.model = model or os.environ.get("KHATA_STT_MODEL", "whisper-large-v3")
 
     def transcribe(self, wav_path: Path) -> str:
+        forced = os.environ.get("KHATA_STT_LANGUAGE", "").strip() or None
+        text = self._post(wav_path, forced)
+        # Spoken Hindi and Urdu are nearly identical, so Whisper sometimes writes Hindi in Urdu
+        # script. The extractor reads Devanagari, so ask again with the language pinned to Hindi.
+        if not forced and URDU_SCRIPT.search(text):
+            log.info("STT returned Urdu script; retrying with language=hi")
+            text = self._post(wav_path, "hi")
+        return text
+
+    def _post(self, wav_path: Path, language: str | None) -> str:
         import httpx
+        data = {"model": self.model, "prompt": STT_PROMPT, "temperature": "0", "response_format": "json"}
+        if language:
+            data["language"] = language
         with wav_path.open("rb") as f:
             r = httpx.post(self.url, headers={"Authorization": f"Bearer {self.key}"},
-                           data={"model": self.model, "prompt": STT_PROMPT, "temperature": "0",
-                                 "response_format": "json"},
-                           files={"file": (wav_path.name, f)}, timeout=STT_TIMEOUT)
+                           data=data, files={"file": (wav_path.name, f)}, timeout=STT_TIMEOUT)
         if r.status_code == 429:
             raise VoiceError("Voice is busy right now (free-tier limit). Please type the entry, or try in a minute.")
         if r.status_code != 200:

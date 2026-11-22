@@ -23,3 +23,13 @@ def test_danda_reply_counts_as_yes():
     b.handle("o", "Ramesh ko 500 udhaar")
     b.handle("o", "हाँ।")
     assert lg.balance("o", "रमेश") == 50000
+
+
+
+def test_first_person_is_not_part_of_the_name():
+    """From a real Telegram voice note after the Hindi retry."""
+    for text in ["मैंने रमेश को 500 रुपये उधार दिए।", "मैं ने रमेश को 500 रुपये उधार दिए।"]:
+        e = extract(text)
+        assert (e.intent, e.customer, e.paise) == ("add_credit", "रमेश", 50000), text
+    e = extract("Maine Ramesh ko 500 udhaar diye")
+    assert (e.intent, e.customer, e.paise) == ("add_credit", "Ramesh", 50000)

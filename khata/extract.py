@@ -154,7 +154,10 @@ STOP = (CREDIT | PAYMENT | BAL | LIST | UNDO | HELP | NE | KO | PAST | {
     "by", "kiye", "kiya", "kie", "kar", "karo", "किए", "किये", "किया", "कर", "ਕੀਤੇ", "ਕੀਤਾ",
     "degi", "denge", "dedega", "dedegi", "देगी", "ਦੇਵੇਗੀ", "hua", "hui", "हुआ", "wapis", "kuchh", "kuch", "रु", "please", "bhai", "ji", "जी", "ਜੀ", "भाई", "ਭਾਈ", "din", "दिन", "give", "credit", "upi", "cash", "gpay", "paytm", "phonepe", "online",
     "batao", "bata", "बताओ", "ਦੱਸੋ", "likh", "likho", "लिखो", "लिख", "ਲਿਖੋ", "do", "dena", "entry",
-    "pichhli", "pichli", "last", "पिछली", "ਪਿਛਲੀ", "gaye", "gaya", "गए", "poore", "pure", "पूरे"}) \
+    "pichhli", "pichli", "last", "पिछली", "ਪਿਛਲੀ", "gaye", "gaya", "गए", "poore", "pure", "पूरे",
+    # the shopkeeper speaking: "मैंने रमेश को..." / "Maine Ramesh ko..." is never part of a name
+    "maine", "mainne", "mainey", "main", "mai", "hamne", "humne", "ham", "hum", "i", "we", "maina",
+    "मैंने", "मैने", "मैं", "मै", "हमने", "हम", "ਮੈਂ", "ਮੈਂਨੇ", "ਅਸੀਂ"}) \
     | set(WORDS) | set(MULT) | set(MODS)
 RECEIVED = {"mil", "mila", "mile", "मिल", "मिला", "मिले", "ਮਿਲ", "ਮਿਲੇ", "bheje", "bheja", "भेजे",
             "भेजा", "ਭੇਜੇ", "aaye", "आए", "received", "got"}

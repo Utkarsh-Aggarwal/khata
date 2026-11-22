@@ -80,3 +80,31 @@ def test_shrink_big_photo():
     small = io.BytesIO()
     Image.new("RGB", (800, 600), "white").save(small, "JPEG")
     assert shrink(small.getvalue(), "image/jpeg") == (small.getvalue(), "image/jpeg")
+
+
+def test_stt_retries_in_hindi_when_whisper_writes_urdu(monkeypatch, tmp_path):
+    """Real Telegram note came back as 'मैं نے رمیش کو 500 روپے उधार دیئے।'."""
+    calls = []
+    replies = iter([{"text": "मैं نے رمیش کو 500 روپے उधार دیئے।"}, {"text": "मैंने रमेश को 500 रुपये उधार दिए।"}])
+
+    def fake_post(url, **kw):
+        calls.append(kw["data"].get("language"))
+        return Resp(200, next(replies))
+    monkeypatch.setattr(httpx, "post", fake_post)
+    wav = tmp_path / "a.ogg"
+    wav.write_bytes(b"OggS")
+    assert OpenAICompatTranscriber("gsk").transcribe(wav) == "मैंने रमेश को 500 रुपये उधार दिए।"
+    assert calls == [None, "hi"]
+
+
+def test_stt_no_retry_for_devanagari_or_english(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_post(url, **kw):
+        calls.append(kw["data"].get("language"))
+        return Resp(200, {"text": "Ramesh ko 500 udhaar"})
+    monkeypatch.setattr(httpx, "post", fake_post)
+    wav = tmp_path / "a.ogg"
+    wav.write_bytes(b"OggS")
+    OpenAICompatTranscriber("gsk").transcribe(wav)
+    assert calls == [None]
