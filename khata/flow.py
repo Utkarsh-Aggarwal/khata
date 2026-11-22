@@ -26,6 +26,16 @@ KIND_CREDIT = {"credit", "udhaar", "udhar", "उधार", "ਉਧਾਰ", "�
                "diya", "diye", "दिए", "lent", "returned", "lautaye", "लौटाए", "bhara", "भरा"}
 DOUBT_EXACT = {"?", "??", "kya", "kya?", "matlab", "matlab?", "samjhao", "explain", "what", "what?", "help me",
                "क्या", "क्या?", "मतलब", "मतलब?", "समझाओ", "ਕੀ", "ਕੀ?", "ਮਤਲਬ", "confused", "not sure", "pata nahi"}
+EXPENSE_ANSWER = {"expense", "kharcha", "kharch", "shop", "dukaan", "dukan", "mera", "meri", "apna", "apni",
+                  "khud", "🧾", "खर्च", "खर्चा", "दुकान", "मेरा", "अपना", "ਖਰਚਾ", "ਦੁਕਾਨ", "ਮੇਰਾ", "mine", "my"}
+CATEGORY_NAME = {
+    "electricity": ("Electricity", "बिजली", "ਬਿਜਲੀ"), "rent": ("Rent", "किराया", "ਕਿਰਾਇਆ"),
+    "salary": ("Salary", "तनख्वाह", "ਤਨਖਾਹ"), "transport": ("Transport", "भाड़ा/पेट्रोल", "ਭਾੜਾ/ਪੈਟਰੋਲ"),
+    "stock": ("Stock", "माल", "ਮਾਲ"), "phone": ("Phone/internet", "फ़ोन/इंटरनेट", "ਫ਼ੋਨ/ਇੰਟਰਨੈੱਟ"),
+    "water": ("Water", "पानी", "ਪਾਣੀ"), "gas": ("Gas", "गैस", "ਗੈਸ"), "tea": ("Tea/snacks", "चाय-नाश्ता", "ਚਾਹ"),
+    "repair": ("Repair", "मरम्मत", "ਮੁਰੰਮਤ"), "purchase": ("Purchase", "खरीद", "ਖਰੀਦ"),
+    "other": ("Other", "अन्य", "ਹੋਰ"),
+}
 DOUBT_PHRASES = ("kya matlab", "matlab kya", "samajh nahi", "samjh nahi", "what does", "what is credit",
                  "what is payment", "which one", "kaunsa", "konsa", "क्या मतलब", "समझ नहीं", "ਸਮਝ ਨਹੀਂ")
 PAY_W = {"payment", "paid", "received", "jama", "जमा", "wapas", "वापस", "ਜਮ੍ਹਾ"}
@@ -38,6 +48,31 @@ M = {
                         "hi": "सेव करूँ: 📥 {name} ने आपको {amt} दिए। इसके बाद {after}। हाँ / नहीं, या नई रकम भेजें।",
                         "pa": "ਸੇਵ ਕਰਾਂ: 📥 {name} ਨੇ ਤੁਹਾਨੂੰ {amt} ਦਿੱਤੇ। ਇਸ ਤੋਂ ਬਾਅਦ {after}। ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਭੇਜੋ।"},
     "saved": {"en": "Saved. Now {after}.", "hi": "सेव हो गया। अब {after}।", "pa": "ਸੇਵ ਹੋ ਗਿਆ। ਹੁਣ {after}।"},
+    "confirm_expense": {"en": "Save: 🧾 shop expense {amt} ({cat}){note}? No customer's balance changes. "
+                              "This month's expenses would be {month}. Reply yes / no, or send a new amount.",
+                        "hi": "सेव करूँ: 🧾 दुकान का खर्च {amt} ({cat}){note}? किसी ग्राहक का हिसाब नहीं बदलेगा। "
+                              "इस महीने का कुल खर्च {month} होगा। हाँ / नहीं, या नई रकम भेजें।",
+                        "pa": "ਸੇਵ ਕਰਾਂ: 🧾 ਦੁਕਾਨ ਦਾ ਖਰਚਾ {amt} ({cat}){note}? ਕਿਸੇ ਗਾਹਕ ਦਾ ਹਿਸਾਬ ਨਹੀਂ ਬਦਲੇਗਾ। "
+                              "ਇਸ ਮਹੀਨੇ ਦਾ ਕੁੱਲ ਖਰਚਾ {month} ਹੋਵੇਗਾ। ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਭੇਜੋ।"},
+    "saved_expense": {"en": "Saved 🧾 {cat} {amt}. This month's expenses: {month}.",
+                      "hi": "सेव हो गया 🧾 {cat} {amt}। इस महीने का खर्च: {month}।",
+                      "pa": "ਸੇਵ ਹੋ ਗਿਆ 🧾 {cat} {amt}। ਇਸ ਮਹੀਨੇ ਦਾ ਖਰਚਾ: {month}।"},
+    "expense_report": {"en": "🧾 Shop expenses this month: {month}", "hi": "🧾 इस महीने दुकान का खर्च: {month}",
+                       "pa": "🧾 ਇਸ ਮਹੀਨੇ ਦੁਕਾਨ ਦਾ ਖਰਚਾ: {month}"},
+    "no_expenses": {"en": "No shop expenses recorded this month. Try: 'bijli ka bill 900'.",
+                    "hi": "इस महीने कोई खर्च दर्ज नहीं। लिखें: 'बिजली का बिल 900'।",
+                    "pa": "ਇਸ ਮਹੀਨੇ ਕੋਈ ਖਰਚਾ ਦਰਜ ਨਹੀਂ। ਲਿਖੋ: 'ਬਿਜਲੀ ਦਾ ਬਿੱਲ 900'।"},
+    "ask_whose": {"en": "Whose bill was this {amt}? Send the person's name, or tap 🧾 Shop expense if the shop paid "
+                        "its own cost (electricity, rent, stock...).",
+                  "hi": "यह {amt} किसका बिल था? व्यक्ति का नाम भेजें, या अगर दुकान का अपना खर्च था (बिजली, किराया, माल...) "
+                        "तो 🧾 दुकान का खर्च दबाएँ।",
+                  "pa": "ਇਹ {amt} ਕਿਸਦਾ ਬਿੱਲ ਸੀ? ਵਿਅਕਤੀ ਦਾ ਨਾਮ ਭੇਜੋ, ਜਾਂ ਜੇ ਦੁਕਾਨ ਦਾ ਆਪਣਾ ਖਰਚਾ ਸੀ ਤਾਂ 🧾 ਦੁਕਾਨ ਦਾ ਖਰਚਾ ਦਬਾਓ।"},
+    "explain_expense": {"en": "🧾 shop expense = the shop's own cost: electricity, rent, salary, stock, tea. It counts in "
+                              "your monthly spending and changes no customer's balance.",
+                        "hi": "🧾 दुकान का खर्च = दुकान की अपनी लागत: बिजली, किराया, तनख्वाह, माल, चाय। यह महीने के खर्च में "
+                              "जुड़ता है, किसी ग्राहक का हिसाब नहीं बदलता।",
+                        "pa": "🧾 ਦੁਕਾਨ ਦਾ ਖਰਚਾ = ਦੁਕਾਨ ਦੀ ਆਪਣੀ ਲਾਗਤ। ਇਹ ਮਹੀਨੇ ਦੇ ਖਰਚੇ ਵਿੱਚ ਜੁੜਦਾ ਹੈ, ਕਿਸੇ ਗਾਹਕ ਦਾ "
+                              "ਹਿਸਾਬ ਨਹੀਂ ਬਦਲਦਾ।"},
     "now_label": {"en": "Right now: ", "hi": "अभी: ", "pa": "ਹੁਣ: "},
     "owes_you": {"en": "{name} owes you {amt}", "hi": "{name} पर {amt} बाकी", "pa": "{name} ਤੇ {amt} ਬਾਕੀ"},
     "you_owe": {"en": "you owe {name} {amt}", "hi": "आपको {name} को {amt} देने हैं",
@@ -89,11 +124,11 @@ M = {
                 "pa": "ਸਮਝ ਨਹੀਂ ਆਇਆ। ਲਿਖੋ: 'ਰਮੇਸ਼ ਨੂੰ 500 ਉਧਾਰ'। help ਲਿਖੋ।"},
     "help": {"en": "Khata: say or type 'Ramesh ko 500 udhaar' (credit), 'Ramesh ne 200 diye' (payment), "
                    "'Ramesh ka kitna baaki', 'list', 'undo', 'export', 'Ramesh ka number 98765 43210', "
-                   "'remind'. You can also send a voice note or a bill photo. Every entry asks for confirmation.",
+                   "'remind', 'bijli ka bill 900' (shop expense), 'kharcha'. You can also send a voice note or a bill photo. Every entry asks for confirmation.",
              "hi": "खाता: 'रमेश को 500 उधार', 'रमेश ने 200 दिए', 'रमेश का कितना बाकी', 'list', 'undo', "
-                   "'रमेश का नंबर 98765 43210', 'याद'। वॉइस नोट या बिल की फोटो भी भेज सकते हैं। हर एंट्री पर पुष्टि होगी।",
+                   "'रमेश का नंबर 98765 43210', 'याद', 'बिजली का बिल 900' (दुकान का खर्च), 'खर्चा'। वॉइस नोट या बिल की फोटो भी भेज सकते हैं। हर एंट्री पर पुष्टि होगी।",
              "pa": "ਖਾਤਾ: 'ਰਮੇਸ਼ ਨੂੰ 500 ਉਧਾਰ', 'ਰਮੇਸ਼ ਨੇ 200 ਦਿੱਤੇ', 'list', 'undo', 'ਰਮੇਸ਼ ਦਾ ਨੰਬਰ 98765 43210', "
-                   "'ਯਾਦ'। ਵੌਇਸ ਨੋਟ ਜਾਂ ਬਿੱਲ ਦੀ ਫੋਟੋ ਵੀ ਭੇਜ ਸਕਦੇ ਹੋ। ਹਰ ਐਂਟਰੀ ਤੇ ਪੁਸ਼ਟੀ ਹੋਵੇਗੀ।"},
+                   "'ਯਾਦ', 'ਬਿਜਲੀ ਦਾ ਬਿੱਲ 900' (ਦੁਕਾਨ ਦਾ ਖਰਚਾ)। ਵੌਇਸ ਨੋਟ ਜਾਂ ਬਿੱਲ ਦੀ ਫੋਟੋ ਵੀ ਭੇਜ ਸਕਦੇ ਹੋ। ਹਰ ਐਂਟਰੀ ਤੇ ਪੁਸ਼ਟੀ ਹੋਵੇਗੀ।"},
 }
 
 
@@ -161,8 +196,11 @@ class Bot:
             e = self.ledger.undo_last(owner)
             if not e:
                 return self._r(self.say("nothing_undo", lang))
-            what = f"{e.customer} {format_rupees(e.paise)} ({e.kind})"
+            what = (f"🧾 {self._cat(lang, e.category)} {format_rupees(e.paise)}" if e.kind == "expense"
+                    else f"{e.customer} {format_rupees(e.paise)} ({e.kind})")
             return self._r(self.say("undone", lang, what=what), changed=True)
+        if ex.intent == "expense_report":
+            return self._r(self._expense_report(owner, lang))
         if ex.intent == "list":
             b = {k: v for k, v in self.ledger.balances(owner).items() if v}
             if not b:
@@ -178,7 +216,7 @@ class Bot:
             if not b:
                 return self._r(self.say("nobody", lang))
             return self._r("\n".join(f"{k}: {format_rupees(v)}" for k, v in b.items()))
-        if ex.intent in ("add_credit", "add_payment", "add_unknown"):
+        if ex.intent in ("add_credit", "add_payment", "add_unknown", "add_expense"):
             if ex.customer:
                 real = self.ledger.find_customer(owner, ex.customer)
                 if real:
@@ -228,6 +266,25 @@ class Bot:
         self.pending[owner] = p
         return self._advance(owner, p)
 
+    # ---- shop expenses -----------------------------------------------------------------------
+    @staticmethod
+    def _cat(lang: str, category: str | None) -> str:
+        names = CATEGORY_NAME.get(category or "other")
+        if not names:
+            return category or "other"
+        return names[{"en": 0, "hi": 1, "pa": 2}[L(lang)]]
+
+    def _month_total(self, owner: str) -> int:
+        return sum(self.ledger.expense_totals(owner, date.today().replace(day=1).isoformat()).values())
+
+    def _expense_report(self, owner: str, lang: str) -> str:
+        totals = self.ledger.expense_totals(owner, date.today().replace(day=1).isoformat())
+        if not totals:
+            return self.say("no_expenses", lang)
+        lines = [self.say("expense_report", lang, month=format_rupees(sum(totals.values())))]
+        lines += [f"• {self._cat(lang, c)}: {format_rupees(v)}" for c, v in totals.items()]
+        return "\n".join(lines)
+
     # ---- plain-language balances and doubts ------------------------------------------------
     def _after(self, lang: str, name: str, bal: int) -> str:
         if bal > 0:
@@ -248,6 +305,11 @@ class Bot:
     def _explain(self, owner: str, p: Pending) -> dict:
         """'?' while an entry waits: explain what credit/payment mean here, then ask again."""
         ex, lang = p.ex, p.ex.lang
+        if ex.intent == "add_expense" or (ex.maybe_expense and not ex.customer):
+            nxt = self._advance(owner, p)
+            extra = "" if ex.intent == "add_expense" else "\n" + self.say(
+                "explain", lang, name={"en": "a person", "hi": "किसी व्यक्ति", "pa": "ਕਿਸੇ ਵਿਅਕਤੀ"}[L(lang)], now="")
+            return {**nxt, "reply": self.say("explain_expense", lang) + extra + "\n\n" + nxt["reply"]}
         name = ex.customer or {"en": "the customer", "hi": "ग्राहक", "pa": "ਗਾਹਕ"}[L(lang)]
         now = self._after(lang, ex.customer, self.ledger.balance(owner, ex.customer)) if ex.customer else ""
         now = (self.say("now_label", lang) + now) if now else ""
@@ -256,8 +318,24 @@ class Bot:
 
     def _advance(self, owner, p: Pending):
         ex, lang = p.ex, p.ex.lang
+        if ex.intent == "add_expense":
+            if ex.paise is not None and ex.paise > MAX_ENTRY_PAISE:
+                ex.paise = None
+                p.awaiting = "amount"
+                return self._r(self.say("too_big", lang) + " " + self.say("ask_amount", lang))
+            if ex.paise is None:
+                p.awaiting = "amount"; return self._r(self.say("ask_amount", lang))
+            p.awaiting = "confirm"
+            note = f": {ex.note}" if ex.note else ""
+            month = format_rupees(self._month_total(owner) + ex.paise)
+            return self._r(self.say("confirm_expense", lang, amt=format_rupees(ex.paise), cat=self._cat(lang, ex.category),
+                                    note=note, month=month), buttons=["yes", "no"], pending=True)
         if not ex.customer:
-            p.awaiting = "customer"; return self._r(self.say("ask_customer", lang))
+            p.awaiting = "customer"
+            if ex.maybe_expense:
+                amt = format_rupees(ex.paise) if ex.paise else ""
+                return self._r(self.say("ask_whose", lang, amt=amt).replace("  ", " "), buttons=["expense", "?"])
+            return self._r(self.say("ask_customer", lang))
         if ex.paise is not None and ex.paise > MAX_ENTRY_PAISE:
             ex.paise = None
             p.awaiting = "amount"
@@ -282,8 +360,12 @@ class Bot:
             del self.pending[owner]
             return self._r(self.say("cancelled", lang))
         if p.awaiting == "customer":
-            if extract(text).intent in ("undo", "help", "list", "balance") or low in ("export", "/export") \
-                    or set(low.split()) & REMIND_W:
+            words = set(low.replace("🧾", " 🧾 ").split())
+            if ex.maybe_expense and words & EXPENSE_ANSWER:
+                ex.intent, ex.category = "add_expense", ex.category or ("purchase" if p.source == "bill" else "other")
+                return self._advance(owner, p)
+            if extract(text).intent in ("undo", "help", "list", "balance", "expense_report") \
+                    or low in ("export", "/export") or set(low.split()) & REMIND_W:
                 return None
             name = " ".join(text.split())[:40]
             if not name_key(name):
@@ -308,6 +390,18 @@ class Bot:
                 return self._ask_kind(lang, ex)
             return self._advance(owner, p)
         # confirm stage
+        if low in YES and ex.intent == "add_expense":
+            x_id = self.ledger.add_expense(owner, ex.category or "other", ex.paise, note=ex.note,
+                                           entry_date=ex.entry_date, source=p.source)
+            del self.pending[owner]
+            return self._r(self.say("saved_expense", lang, cat=self._cat(lang, ex.category), amt=format_rupees(ex.paise),
+                                    month=format_rupees(self._month_total(owner))), changed=True, expense_id=x_id)
+        if ex.intent == "add_expense":
+            amt, _ = parse_amount(text)
+            if amt is not None and len(low.split()) <= 3:
+                ex.paise = amt
+                return self._advance(owner, p)
+            return None
         if low in YES:
             e_id = self.ledger.add_entry(
                 owner, ex.customer, "credit" if ex.intent == "add_credit" else "payment",

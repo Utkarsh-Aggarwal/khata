@@ -33,7 +33,7 @@ FILE_MAX = 10 * 1024 * 1024
 ALLOWED_UPDATES = ["message", "callback_query"]
 BUTTON_TITLES = {"yes": "✅ Yes / हाँ", "no": "❌ No / नहीं",
                  "credit": "📤 I gave / मैंने दिए", "payment": "📥 They gave / उन्होंने दिए",
-                 "?": "❓ Explain / समझाओ"}
+                 "?": "❓ Explain / समझाओ", "expense": "🧾 Shop expense / दुकान खर्च"}
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ERROR_REPLY = "Something went wrong. Nothing was saved. Please try again."
 PRIVATE_ONLY = "Please message me privately. Khata only works in a one-to-one chat."
@@ -41,7 +41,8 @@ UNSUPPORTED = "I can read text, voice notes and bill photos."
 TOO_LARGE = "That photo is too large. Please send a smaller one."
 RATE_PER_MIN = 30
 COMMANDS = {"start": "help", "help": "help", "export": "export",
-            "list": "list", "undo": "undo", "remind": "remind"}    # "id" is handled by the adapter
+            "list": "list", "undo": "undo", "remind": "remind",
+            "expenses": "kharcha", "kharcha": "kharcha"}              # "id" is handled by the adapter
 
 log = logging.getLogger("khata.telegram")
 

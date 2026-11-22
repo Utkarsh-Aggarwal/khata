@@ -75,6 +75,7 @@ select{font:inherit;padding:6px;border:2px solid var(--ink);background:#fffdf5;b
   <section aria-label="Dues">
     <h2>Ghosts of dues past</h2>
     <div>Total due: <span id="total">₹0</span> <span id="late" class="note"></span></div>
+    <div>🧾 Shop expenses this month: <b id="spent">₹0</b> <span id="spentBy" class="note"></span></div>
     <div class="quick">
       <label for="rlang">Reminder language</label>
       <select id="rlang"><option value="hinglish">Hinglish</option><option value="hi">हिन्दी</option><option value="pa">ਪੰਜਾਬੀ</option><option value="en">English</option></select>
@@ -113,6 +114,8 @@ async function refresh(){
   const d=await api("/api/ledger?lang="+encodeURIComponent($("rlang").value));
   $("total").textContent=d.total_due;
   $("late").textContent=d.overdue_count?`(${d.overdue_count} overdue)`:"";
+  $("spent").textContent=d.expenses_month||"₹0";
+  $("spentBy").textContent=(d.expense_categories||[]).map(c=>c.category+" "+c.amount).join(" · ");
   const owing=(d.customers||[]).filter(c=>c.paise>0);
   $("seanceList").innerHTML=owing.map(c=>`<li><a href="${esc(c.wa)}" target="_blank" rel="noopener">👻 ${esc(c.name)}: ${esc(c.balance)}${c.overdue?" ("+c.days_overdue+"d overdue)":""}${c.has_phone?"":" (pick contact)"}</a><q>${esc(c.message)}</q></li>`).join("")||"<li>Nobody owes you. The ghosts rest.</li>";
   $("ghosts").innerHTML=d.customers.filter(c=>c.paise>0).map(c=>

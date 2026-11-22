@@ -1,0 +1,158 @@
+"""Shop expenses: the shop's own costs, kept apart from customer balances."""
+import io
+from datetime import date
+
+import pytest
+from openpyxl import load_workbook
+
+from khata.bills import SAMPLE_BILL, to_extraction
+from khata.export import build_xlsx
+from khata.extract import extract
+from khata.flow import Bot
+from khata.ledger import Ledger
+from khata.sheets import SheetMirror
+
+from test_sheets import Clock, FakeSheet
+
+
+@pytest.mark.parametrize("text,cat,paise", [
+    ("maine bijli ka bill 500 bhara", "electricity", 50000),
+    ("मैंने बिजली का बिल 900 भरा", "electricity", 90000),
+    ("bijli ka bill 1200", "electricity", 120000),
+    ("dukaan ka kiraya 8000 diya", "rent", 800000),
+    ("ਕਿਰਾਇਆ 5000", "rent", 500000),
+    ("Raju ko 3000 salary di", "salary", 300000),
+    ("chai 50", "tea", 5000),
+    ("kal petrol 400", "transport", 40000),
+    ("maal 5000 ka liya", "stock", 500000),
+    ("gas cylinder 1100", "gas", 110000),
+    ("500 ka kharcha", "other", 50000),
+])
+def test_expense_phrases(text, cat, paise):
+    e = extract(text)
+    assert (e.intent, e.category, e.paise) == ("add_expense", cat, paise), (text, e)
+
+
+@pytest.mark.parametrize("text,intent", [
+    ("Ramesh ko 500 udhaar", "add_credit"),          # customer words still win
+    ("Ramesh ko maal diya 500", "add_credit"),       # goods given to a person = credit
+    ("Sita ne 200 diye", "add_payment"),
+    ("maine Ramesh ka 500 ka bill bhara", "add_unknown"),
+    ("kharcha", "expense_report"),
+    ("is mahine ka kharcha kitna hua", "expense_report"),
+])
+def test_not_expenses(text, intent):
+    assert extract(text).intent == intent
+
+
+def test_expense_confirm_save_and_balances_untouched():
+    lg = Ledger()
+    b = Bot(lg)
+    lg.add_entry("o", "Ramesh", "credit", 50000)
+    r = b.handle("o", "bijli ka bill 900")
+    assert r["buttons"] == ["yes", "no"] and "🧾" in r["reply"] and "₹900" in r["reply"]
+    assert lg.expenses("o") == []                          # nothing before confirm
+    r = b.handle("o", "haan")
+    assert "₹900" in r["reply"]
+    assert lg.expense_totals("o") == {"electricity": 90000}
+    assert lg.balances("o") == {"Ramesh": 50000} and lg.total_due("o") == 50000
+    assert "₹900" in b.handle("o", "kharcha")["reply"]
+
+
+def test_salary_keeps_who_in_note():
+    lg = Ledger()
+    b = Bot(lg)
+    b.handle("o", "Raju ko 3000 salary di")
+    b.handle("o", "yes")
+    x = lg.expenses("o")[0]
+    assert (x.category, x.paise, x.note) == ("salary", 300000, "Raju")
+    assert lg.balances("o") == {}                          # Raju is staff, not a customer
+
+
+def test_whose_bill_shop_expense_or_person():
+    lg = Ledger()
+    b = Bot(lg)
+    r = b.handle("o", "maine bill 500 bhara")
+    assert r["buttons"] == ["expense", "?"]
+    r = b.handle("o", "?")
+    assert "🧾" in r["reply"] and r["buttons"] == ["expense", "?"]
+    r = b.handle("o", "expense")
+    assert r["buttons"] == ["yes", "no"] and "🧾" in r["reply"]
+    b.handle("o", "yes")
+    assert lg.expense_totals("o") == {"other": 50000}
+    # same question, but it was a person's bill: then credit/payment as before
+    b.handle("o", "maine bill 300 bhara")
+    r = b.handle("o", "Sita")
+    assert r["buttons"] == ["credit", "payment", "?"]
+
+
+def test_bill_photo_can_be_shop_purchase():
+    lg = Ledger()
+    b = Bot(lg)
+    r = b.start_from_extraction("o", to_extraction(SAMPLE_BILL), "bill")
+    assert r["buttons"] == ["expense", "?"]
+    b.handle("o", "🧾")
+    b.handle("o", "yes")
+    x = lg.expenses("o")[0]
+    assert (x.category, x.paise) == ("purchase", 84650) and "Sharma" in x.note
+
+
+def test_undo_takes_back_the_newest_of_either():
+    lg = Ledger()
+    b = Bot(lg)
+    b.handle("o", "Ramesh ko 500 udhaar"); b.handle("o", "yes")
+    b.handle("o", "chai 50"); b.handle("o", "yes")
+    assert "🧾" in b.handle("o", "undo")["reply"]
+    assert lg.expenses("o") == [] and lg.balance("o", "Ramesh") == 50000
+    assert "Ramesh" in b.handle("o", "undo")["reply"]
+    assert lg.balance("o", "Ramesh") == 0
+
+
+def test_expenses_are_per_owner_and_deleted_with_owner():
+    lg = Ledger()
+    lg.add_expense("a", "rent", 100)
+    lg.add_expense("b", "rent", 999)
+    assert lg.expense_totals("a") == {"rent": 100}
+    lg.delete_owner_data("b")
+    assert lg.expenses("b", include_cancelled=True) == [] and lg.expense_totals("a") == {"rent": 100}
+
+
+def test_month_filter():
+    lg = Ledger()
+    lg.add_expense("o", "rent", 100, entry_date="2020-01-05")
+    lg.add_expense("o", "rent", 200)
+    assert lg.expense_totals("o", date.today().replace(day=1).isoformat()) == {"rent": 200}
+
+
+def test_export_has_expenses_sheet():
+    lg = Ledger()
+    lg.add_entry("o", "Ramesh", "credit", 50000)
+    lg.add_expense("o", "electricity", 90050, note="bill")
+    wb = load_workbook(io.BytesIO(build_xlsx(lg, "o")))
+    assert wb.sheetnames == ["Khata", "Expenses"]
+    rows = list(wb["Expenses"].iter_rows(values_only=True))
+    assert rows[1][1:3] == ("electricity", 900.5)
+
+
+def test_sheet_mirror_and_restore_expenses():
+    sh = FakeSheet()
+    lg = Ledger()
+    m = SheetMirror(lg, sh, "shop", Clock())
+    lg.add_entry("shop", "Ramesh", "credit", 50000, entry_date="2026-11-01")
+    lg.add_expense("shop", "electricity", 90000, entry_date="2026-11-02", note="bill")
+    lg.add_expense("shop", "tea", 5000, entry_date="2026-11-03")
+    lg.undo_last("shop")                                   # cancels the tea expense
+    m.sync()
+    assert [r[0] for r in sh.rows[1:]] == [1, "E1", "E2"]
+    assert sh.rows[3][3] == "expense" and sh.rows[3][6] == "cancelled"
+    assert m.sync() == {"synced": 0, "failed": 0, "pending": 0}
+
+    fresh = Ledger()                                       # disk wiped
+    m2 = SheetMirror(fresh, sh, "shop", Clock())
+    assert m2.boot() == {"restored": 3, "skipped": 0}
+    assert fresh.balances("shop") == {"Ramesh": 50000}
+    assert fresh.expense_totals("shop") == {"electricity": 90000}
+    assert m2.sync()["synced"] == 0
+    new = fresh.add_expense("shop", "rent", 100)
+    m2.sync()
+    assert new == 3 and sh.rows[-1][0] == "E3"

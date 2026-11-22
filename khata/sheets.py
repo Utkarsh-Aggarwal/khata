@@ -109,7 +109,8 @@ class SheetMirror:
         validation are skipped and counted, never guessed at.
         """
         with self.ledger.lock:
-            if self.ledger.db.execute("SELECT 1 FROM entries LIMIT 1").fetchone():
+            if (self.ledger.db.execute("SELECT 1 FROM entries LIMIT 1").fetchone()
+                    or self.ledger.db.execute("SELECT 1 FROM expenses LIMIT 1").fetchone()):
                 return {"restored": 0, "skipped": 0, "reason": "database not empty"}
         rows = self.client.read_all()
         if not rows:
@@ -123,6 +124,10 @@ class SheetMirror:
                 if str(row[0]).strip().lower() in ("", "entry_id"):
                     continue
                 try:
+                    if str(row[0]).strip().upper().startswith("E"):
+                        self._restore_expense(i, row)
+                        restored += 1
+                        continue
                     entry_id = int(float(row[0]))
                     entry_date, customer, kind = str(row[1])[:10], str(row[2]).strip(), str(row[3]).strip()
                     paise = round(float(str(row[4]).replace(",", "")) * 100)
@@ -147,6 +152,34 @@ class SheetMirror:
             self.ledger.db.commit()
         return {"restored": restored, "skipped": skipped}
 
+    def _restore_expense(self, i: int, row: list) -> None:
+        """Rows like ["E12", date, category, "expense", rupees, "", status, note]. Caller holds the lock."""
+        xid = int(str(row[0]).strip()[1:])
+        entry_date, category, kind = str(row[1])[:10], str(row[2]).strip(), str(row[3]).strip()
+        paise = round(float(str(row[4]).replace(",", "")) * 100)
+        status = str(row[6]).strip() or "active"
+        if (kind != "expense" or status not in ("active", "cancelled") or not 0 < paise <= 10**9
+                or not category or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", entry_date) or xid <= 0):
+            raise ValueError(row)
+        self.ledger.db.execute(
+            "INSERT INTO expenses(id,owner,category,paise,note,entry_date,status,source,created_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            (xid, self.owner, category[:40], paise, str(row[7])[:200], entry_date, status, "sheet",
+             entry_date + "T00:00:00+00:00"))
+        self.ledger.db.execute(
+            "INSERT OR REPLACE INTO sheet_sync(entry_id,owner,row,synced_status,attempts,next_at) "
+            "VALUES(?,?,?,?,0,0)", (-xid, self.owner, i, status))
+
+    def _records(self) -> list[tuple[int, str, str, list]]:
+        """Everything mirrored: (sync key, sheet id, status, row). Expenses use negative keys."""
+        out = [(e.id, str(e.id), e.status, [e.id, e.entry_date, e.customer, e.kind, e.paise / 100,
+                                            e.due_date or "", e.status, ""])
+               for e in self.ledger.entries(self.owner, include_cancelled=True)]
+        out += [(-x.id, f"E{x.id}", x.status, [f"E{x.id}", x.entry_date, x.category, "expense", x.paise / 100,
+                                               "", x.status, x.note])
+                for x in self.ledger.expenses(self.owner, include_cancelled=True)]
+        return out
+
     def _state(self) -> dict[int, dict]:
         with self.ledger.lock:
             rows = self.ledger.db.execute("SELECT * FROM sheet_sync WHERE owner=?", (self.owner,)).fetchall()
@@ -154,8 +187,7 @@ class SheetMirror:
 
     def pending(self) -> int:
         st = self._state()
-        return sum(1 for e in self.ledger.entries(self.owner, include_cancelled=True)
-                   if st.get(e.id, {}).get("synced_status") != e.status)
+        return sum(1 for key, _, status, _ in self._records() if st.get(key, {}).get("synced_status") != status)
 
     def sync(self) -> dict:
         if self.paused:
@@ -164,25 +196,23 @@ class SheetMirror:
         now = self.clock()
         with self.ledger.lock:
             st = self._state()
-            todo = [e for e in self.ledger.entries(self.owner, include_cancelled=True)
-                    if st.get(e.id, {}).get("synced_status") != e.status
-                    and st.get(e.id, {}).get("next_at", 0) <= now]
-        for e in todo:
-            s = st.get(e.id, {})
+            todo = [r for r in self._records()
+                    if st.get(r[0], {}).get("synced_status") != r[2] and st.get(r[0], {}).get("next_at", 0) <= now]
+        for key, sheet_id, status, values in todo:
+            s = st.get(key, {})
             try:
                 row = s.get("row")
                 if row is None and s.get("attempts", 0) > 0:
-                    row = self.client.find(e.id)            # did a previous append land?
+                    row = self.client.find(sheet_id if key < 0 else key)   # did a previous append land?
                 if row is None:
-                    row = self.client.append([e.id, e.entry_date, e.customer, e.kind, e.paise / 100,
-                                              e.due_date or "", e.status, ""])
-                elif e.status != s.get("synced_status"):
-                    self.client.set_status(row, e.status)
-                self._save(e.id, row, e.status, 0, 0, None)
+                    row = self.client.append(values)
+                elif status != s.get("synced_status"):
+                    self.client.set_status(row, status)
+                self._save(key, row, status, 0, 0, None)
                 done += 1
             except Exception as ex:                          # retry later with backoff
                 n = s.get("attempts", 0) + 1
-                self._save(e.id, s.get("row"), s.get("synced_status"), n,
+                self._save(key, s.get("row"), s.get("synced_status"), n,
                            now + min(300, 2 ** n), type(ex).__name__)
                 failed += 1
         return {"synced": done, "failed": failed, "pending": self.pending()}

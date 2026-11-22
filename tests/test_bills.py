@@ -55,7 +55,7 @@ def test_bill_always_asks_customer_and_kind_even_if_bill_says_otherwise():
            "total_rupees": 846.5, "customer": "Mallory", "kind": "credit"}
     c = _client(FakeVision(inj))
     r = c.post("/api/bill", files={"file": ("b.png", PNG, "image/png")}).json()
-    assert "₹846.50" in r["reply"] and "Who is the customer?" in r["reply"]
+    assert "₹846.50" in r["reply"] and "Whose bill was this" in r["reply"]
     assert c.get("/api/ledger").json()["entries"] == []
     r = c.post("/api/chat", json={"text": "Ramesh"}).json()
     assert r["buttons"] == ["credit", "payment", "?"]                 # kind is asked, not taken from bill
@@ -92,4 +92,4 @@ def test_whatsapp_image_routes_to_bill_reader():
         {"id": "i1", "from": "91999", "type": "image", "image": {"id": "M", "mime_type": "image/jpeg"}}]}}]}]}).encode()
     sig = "sha256=" + hmac.new(b"s", body, hashlib.sha256).hexdigest()
     assert c.post("/webhook/whatsapp", content=body, headers={"x-hub-signature-256": sig}).status_code == 200
-    assert "₹120" in wa.sent[-1][0] and "customer" in wa.sent[-1][0]
+    assert "₹120" in wa.sent[-1][0] and "Whose bill" in wa.sent[-1][0]

@@ -38,7 +38,7 @@ def test_full_judge_flow_with_paid_apis_off():
     r = c.post("/api/voice", files={"file": ("n.webm", b"x" * 10, "audio/webm")}).json()
     assert "demo mode" in r["reply"]
     r = c.post("/api/bill/sample").json()
-    assert "Who is the customer?" in r["reply"]
+    assert "Whose bill was this" in r["reply"]
     for t in ("Kamla", "credit", "yes"):
         r = c.post("/api/chat", json={"text": t}).json()
     assert "Saved" in r["reply"]

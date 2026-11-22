@@ -5,6 +5,8 @@
 - Every ledger query takes `owner` and filters by it. No cross-owner reads, ever.
 - All SQLite access goes through `ledger.lock` (one shared connection across web threads,
   WhatsApp background tasks and the sheet mirror thread).
+- Shop expenses (electricity, rent, salary, stock...) live in the `expenses` table and never
+  change a customer balance. A bill with no person named asks: someone's bill, or a shop expense?
 - Single entries above ₹1 crore are rejected as misreads (`MAX_ENTRY_PAISE` in `flow.py`).
 
 ## Confirmation and trust

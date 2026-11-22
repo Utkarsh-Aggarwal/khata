@@ -223,11 +223,14 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
     def get_ledger(lang: str = "hinglish", sid: str | None = Cookie(None)):
         o = owner_of(sid)
         owing = [g.as_dict() for g in ghosts(ledger, o, lang)]
+        month = ledger.expense_totals(o, date.today().replace(day=1).isoformat())
         advance = [{"name": n, "paise": v, "balance": format_rupees(v), "overdue": False, "wa": None}
                    for n, v in ledger.balances(o).items() if v < 0]       # customer paid in advance
         return {
             "total_due": format_rupees(ledger.total_due(o)),
             "overdue_count": sum(1 for g in owing if g["overdue"]),
+            "expenses_month": format_rupees(sum(month.values())),
+            "expense_categories": [{"category": c, "amount": format_rupees(v)} for c, v in month.items()],
             "customers": owing + advance,
             "entries": [e.__dict__ for e in ledger.entries(o, include_cancelled=True)][::-1][:50],
         }

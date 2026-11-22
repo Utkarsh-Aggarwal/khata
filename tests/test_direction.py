@@ -63,7 +63,7 @@ def test_doubt_explains_and_keeps_entry_waiting():
     lg = Ledger()
     b = Bot(lg)
     r = b.handle("o", "maine bill 500 bhara")
-    assert r["reply"] == M["ask_customer"]["hi"]
+    assert r["reply"].startswith("यह ₹500 किसका बिल था") and r["buttons"] == ["expense", "?"]
     r = b.handle("o", "Ramesh")
     assert r["buttons"] == ["credit", "payment", "?"] and "₹500" in r["reply"]
     r = b.handle("o", "?")

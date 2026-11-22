@@ -61,6 +61,16 @@ def build(ledger: Ledger, owner: str) -> MCPServer:
         return {"reminders": [{"name": g.name, "balance": format_rupees(g.paise), "days_overdue": g.days_overdue,
                                "message": g.message, "link": g.wa} for g in ghosts(ledger, owner, lang)]}
 
+    @srv.tool(description="Shop expenses (electricity, rent, salary, stock...) since a date (YYYY-MM-DD; "
+                          "default: start of this month), totalled by category. These are the shop's own costs "
+                          "and are separate from customer balances.")
+    def expenses(since: str = "") -> dict:
+        from datetime import date as _date
+        start = since[:10] if since else _date.today().replace(day=1).isoformat()
+        totals = ledger.expense_totals(owner, start)
+        return {"since": start, "total": format_rupees(sum(totals.values())),
+                "by_category": [{"category": c, "amount": format_rupees(v)} for c, v in totals.items()]}
+
     @srv.tool(description="Dry run: how the Khata bot would read a message such as 'Ramesh ko 500 udhaar'. "
                           "Does not save anything.")
     def parse_entry(text: str) -> dict:

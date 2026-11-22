@@ -24,6 +24,12 @@ CREATE TABLE IF NOT EXISTS entries(
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','cancelled')),
   source TEXT DEFAULT 'text', created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_entries_owner ON entries(owner, customer_id);
+CREATE TABLE IF NOT EXISTS expenses(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, category TEXT NOT NULL,
+  paise INTEGER NOT NULL CHECK(paise > 0), note TEXT DEFAULT '', entry_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','cancelled')),
+  source TEXT DEFAULT 'text', created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS ix_expenses_owner ON expenses(owner, entry_date);
 """
 
 
@@ -41,6 +47,18 @@ class Entry:
     entry_date: str
     due_date: str | None
     status: str
+
+
+@dataclass
+class Expense:
+    """The shop's own cost (electricity, rent, salary...). Never changes a customer balance."""
+    id: int
+    category: str
+    paise: int
+    note: str
+    entry_date: str
+    status: str
+    kind: str = "expense"
 
 
 def format_rupees(paise: int) -> str:
@@ -160,17 +178,67 @@ class Ledger:
             self.db.commit()
             return cur.lastrowid
 
-    def undo_last(self, owner: str) -> Entry | None:
+    def undo_last(self, owner: str) -> Entry | Expense | None:
+        """Cancel the newest active record, customer entry or shop expense."""
         with self.lock:
-            r = self.db.execute(
-                "SELECT id FROM entries WHERE owner=? AND status='active' "
-                "ORDER BY id DESC LIMIT 1", (owner,)).fetchone()
-            if not r:
+            e = self.db.execute(
+                "SELECT id, created_at FROM entries WHERE owner=? AND status='active' "
+                "ORDER BY created_at DESC, id DESC LIMIT 1", (owner,)).fetchone()
+            x = self.db.execute(
+                "SELECT id, created_at FROM expenses WHERE owner=? AND status='active' "
+                "ORDER BY created_at DESC, id DESC LIMIT 1", (owner,)).fetchone()
+            if not e and not x:
                 return None
+            if x and (not e or x["created_at"] > e["created_at"]):
+                self.db.execute("UPDATE expenses SET status='cancelled' WHERE id=? AND owner=?", (x["id"], owner))
+                self.db.commit()
+                return self.get_expense(owner, x["id"])
             self.db.execute("UPDATE entries SET status='cancelled' WHERE id=? AND owner=?",
-                            (r["id"], owner))
+                            (e["id"], owner))
             self.db.commit()
-            return self.get_entry(owner, r["id"])
+            return self.get_entry(owner, e["id"])
+
+    # ---- shop expenses ----------------------------------------------
+    def add_expense(self, owner: str, category: str, paise: int, *, note: str = "",
+                    entry_date: str | None = None, source: str = "text") -> int:
+        if not isinstance(paise, int) or isinstance(paise, bool) or paise <= 0:
+            raise LedgerError("amount must be positive integer paise")
+        category = (category or "other").strip()[:40] or "other"
+        with self.lock:
+            cur = self.db.execute(
+                "INSERT INTO expenses(owner,category,paise,note,entry_date,source,created_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (owner, category, paise, note, entry_date or date.today().isoformat(), source,
+                 datetime.now(timezone.utc).isoformat()))
+            self.db.commit()
+            return cur.lastrowid
+
+    @staticmethod
+    def _expense(r) -> Expense:
+        return Expense(r["id"], r["category"], r["paise"], r["note"], r["entry_date"], r["status"])
+
+    def get_expense(self, owner: str, expense_id: int) -> Expense | None:
+        with self.lock:
+            r = self.db.execute("SELECT * FROM expenses WHERE owner=? AND id=?", (owner, expense_id)).fetchone()
+        return self._expense(r) if r else None
+
+    def expenses(self, owner: str, *, since: str | None = None,
+                 include_cancelled: bool = False) -> list[Expense]:
+        q, args = "SELECT * FROM expenses WHERE owner=?", [owner]
+        if since:
+            q += " AND entry_date>=?"
+            args.append(since)
+        if not include_cancelled:
+            q += " AND status='active'"
+        with self.lock:
+            return [self._expense(r) for r in self.db.execute(q + " ORDER BY id", args)]
+
+    def expense_totals(self, owner: str, since: str | None = None) -> dict[str, int]:
+        """Active expenses per category since a date, largest first."""
+        out: dict[str, int] = {}
+        for x in self.expenses(owner, since=since):
+            out[x.category] = out.get(x.category, 0) + x.paise
+        return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
     def get_entry(self, owner: str, entry_id: int) -> Entry | None:
         with self.lock:
@@ -237,7 +305,8 @@ class Ledger:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=older_than_days)).isoformat()
         with self.lock:
             old = [r["owner"] for r in self.db.execute(
-                "SELECT owner FROM entries WHERE owner LIKE 'demo-%' GROUP BY owner "
+                "SELECT owner FROM (SELECT owner, created_at FROM entries UNION ALL "
+                "SELECT owner, created_at FROM expenses) WHERE owner LIKE 'demo-%' GROUP BY owner "
                 "HAVING MAX(created_at) < ?", (cutoff,))]
             for o in old:
                 self.delete_owner_data(o)
@@ -246,6 +315,6 @@ class Ledger:
     # ---- privacy ---------------------------------------------------
     def delete_owner_data(self, owner: str) -> None:
         with self.lock:
-            for t in ("entries", "aliases", "customers"):
+            for t in ("entries", "expenses", "aliases", "customers"):
                 self.db.execute(f"DELETE FROM {t} WHERE owner=?", (owner,))
             self.db.commit()

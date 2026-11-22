@@ -176,9 +176,31 @@ TO_M = {"ko", "को", "ਨੂੰ", "to"}
 FROM_M = {"se", "से", "ਤੋਂ", "from"}
 BILL_W = {"bill", "बिल", "ਬਿੱਲ"}
 
+# Shop expenses: the shop's own costs. They never change a customer's balance.
+CATEGORY_WORDS = {
+    "electricity": {"bijli", "bijlee", "light", "electricity", "बिजली", "ਬਿਜਲੀ"},
+    "rent": {"kiraya", "kiraaya", "kiraye", "rent", "किराया", "किराए", "ਕਿਰਾਇਆ"},
+    "salary": {"salary", "tankhwah", "tankha", "tankhah", "pagaar", "wages", "wage", "तनख्वाह", "तनखा", "वेतन",
+               "सैलरी", "ਤਨਖਾਹ"},
+    "transport": {"petrol", "diesel", "transport", "bhada", "bhaada", "freight", "tempo", "पेट्रोल", "डीज़ल",
+                  "डीजल", "भाड़ा", "ਪੈਟਰੋਲ", "ਭਾੜਾ"},
+    "stock": {"stock", "maal", "wholesale", "माल", "ਮਾਲ"},
+    "phone": {"recharge", "internet", "wifi", "रिचार्ज", "ਰੀਚਾਰਜ"},
+    "water": {"paani", "pani", "water", "पानी", "ਪਾਣੀ"},
+    "gas": {"gas", "cylinder", "गैस", "सिलेंडर", "ਗੈਸ"},
+    "tea": {"chai", "tea", "nashta", "चाय", "नाश्ता", "ਚਾਹ"},
+    "repair": {"repair", "marammat", "मरम्मत", "ਮੁਰੰਮਤ"},
+}
+CATEGORY_OF = {w: c for c, ws in CATEGORY_WORDS.items() for w in ws}
+EXPENSE_W = {"kharcha", "kharche", "kharch", "expense", "expenses", "spent", "spend", "खर्च", "खर्चा", "खर्चे",
+             "ਖਰਚਾ", "ਖਰਚ", "dukaan", "दुकान", "shop", "ਦੁਕਾਨ"}
+# Paying a person for these is still the shop's cost, e.g. "Raju ko 3000 salary di".
+PERSON_OK_CATEGORIES = {"salary", "rent", "transport", "repair"}
+
 RECEIVED = {"mil", "mila", "mile", "मिल", "मिला", "मिले", "ਮਿਲ", "ਮਿਲੇ", "bheje", "bheja", "भेजे",
             "भेजा", "ਭੇਜੇ", "aaye", "आए", "received", "got"}
 STOP |= RECEIVED | GIVE_V | TAKE_V | RECV_V | FIRST_P | BILL_W | {"back", "account", "lautana", "bhi"}
+STOP |= set(CATEGORY_OF) | EXPENSE_W | {"di", "hua", "hue", "is", "mahine", "month", "this", "महीने", "इस"}
 
 
 @dataclass
@@ -191,6 +213,8 @@ class Extraction:
     note: str = ""
     lang: str = "en"
     missing: list[str] = field(default_factory=list)
+    category: str | None = None        # add_expense only
+    maybe_expense: bool = False        # "maine bill bhara" or a bill photo: a person's, or the shop's?
 
 
 def detect_lang(text: str) -> str:
@@ -200,7 +224,8 @@ def detect_lang(text: str) -> str:
         return "hi"
     low = set(re.findall(r"[a-z]+", text.lower()))
     if low & {"ko", "ne", "udhaar", "udhar", "kal", "diye", "diya", "kitna", "hai", "baaki",
-              "rupay", "rupaye", "hisaab", "liya", "wapas", "paanch", "sau", "hazaar", "ka", "maine", "hamne", "bhara", "bhar", "lautaye", "liye", "mile", "kiye"}:
+              "rupay", "rupaye", "hisaab", "liya", "wapas", "paanch", "sau", "hazaar", "ka", "maine", "hamne", "bhara", "bhar", "lautaye", "liye", "mile", "kiye",
+              "kharcha", "kharche", "kharch", "bijli", "kiraya", "kiraaya", "tankhwah", "chai", "bhada", "dukaan"}:
         return "hinglish"
     return "en"
 
@@ -273,6 +298,15 @@ def _direction(low: list[str], s: set[str]) -> str | None:
     return "add_credit" if money_left_shop else "add_payment"
 
 
+def _rel_date(s: set[str], today: date, past: bool) -> str | None:
+    """Expenses already happened: 'kal' is yesterday, 'parso' the day before."""
+    for words, days in (({"kal", "कल", "ਕੱਲ", "ਕਲ", "yesterday"}, -1), ({"parso", "परसों", "ਪਰਸੋਂ"}, -2),
+                        ({"aaj", "आज", "ਅੱਜ", "today"}, 0)):
+        if s & words:
+            return (today + timedelta(days=days if past else -days)).isoformat()
+    return None
+
+
 def _wants_undo(s: set[str]) -> bool:
     return bool(s & {"delete", "remove", "hatao", "hata", "cancel", "हटाओ", "ਹਟਾਓ"}
                 and s & {"last", "pichhli", "pichli", "entry", "पिछली", "एंट्री", "ਪਿਛਲੀ", "ਐਂਟਰੀ"})
@@ -296,6 +330,19 @@ def extract(text: str, today: date | None = None) -> Extraction:
     name_toks = _name_tokens(clean, used)
     customer = " ".join(name_toks).title() if name_toks else None
     # latin names title-cased; native scripts untouched by title()
+
+    # shop expenses
+    cats = [CATEGORY_OF[w] for w in low if w in CATEGORY_OF]
+    cat = cats[0] if cats else None
+    explicit = bool(s & EXPENSE_W)
+    udhaar = s & {"udhaar", "udhar", "udhari", "उधार", "उधारी", "ਉਧਾਰ", "ਉਧਾਰੀ", "credit", "owes", "borrowed"}
+    if explicit and paise is None and not udhaar:
+        return Extraction("expense_report", lang=lang)
+    if paise is not None and (explicit or (cat and (customer is None or cat in PERSON_OK_CATEGORIES))) \
+            and not udhaar:
+        note = customer if customer and cat in PERSON_OK_CATEGORIES else ""
+        return Extraction("add_expense", paise=paise, lang=lang, category=cat or "other", note=note,
+                          entry_date=_rel_date(s, today, past=True))
 
     # direction
     if s & BAL and paise is None and "udhaar" not in s:
@@ -330,6 +377,8 @@ def extract(text: str, today: date | None = None) -> Extraction:
         kind = "add_unknown"
 
     ex = Extraction(kind, customer=customer, paise=paise, lang=lang)
+    if flow == "ask" and not customer:
+        ex.maybe_expense = True        # "maine bill bhara": someone's bill, or the shop's own?
 
     # dates: 'kal' is yesterday in past tense, tomorrow in future tense
     past = bool(s & PAST)
