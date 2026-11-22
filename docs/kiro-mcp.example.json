@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "khata": {
+      "command": ".venv/bin/python",
+      "args": ["-m", "khata.mcp_server"],
+      "env": {
+        "KHATA_DB": "khata.db",
+        "KHATA_MCP_OWNER": "set-an-owner-id-then-enable"
+      },
+      "disabled": true,
+      "autoApprove": ["balances", "customer", "draft_reminders", "parse_entry"]
+    }
+  }
+}

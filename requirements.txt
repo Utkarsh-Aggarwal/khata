@@ -5,6 +5,7 @@ pillow
 python-multipart
 google-auth
 requests
+mcp>=2.3,<3
 pytest
 hypothesis
 httpx

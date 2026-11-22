@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Extraction eval on extractor change",
+      "trigger": "PostFileSave",
+      "description": "Prints golden, dev2 and blind eval scores and any failures whenever the extractor or name matcher changes.",
+      "matcher": "khata/(extract|names)\\.py$",
+      "action": {
+        "type": "command",
+        "command": ".venv/bin/python -m evals.run | grep -E \"^##|Wrong|^- \"",
+        "timeout": 60
+      }
+    }
+  ]
+}

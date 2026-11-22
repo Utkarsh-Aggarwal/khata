@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Run tests on Python save",
+      "trigger": "PostFileSave",
+      "description": "Runs the test suite whenever a file in khata/ or tests/ is saved, stopping at the first failure.",
+      "matcher": "(khata|tests)/.*\\.py$",
+      "action": {
+        "type": "command",
+        "command": ".venv/bin/python -m pytest -q -x -p no:warnings 2>&1 | tail -5",
+        "timeout": 120
+      }
+    }
+  ]
+}
