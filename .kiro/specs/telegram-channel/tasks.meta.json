@@ -1,0 +1,712 @@
+{
+  "pbtResults": {
+    "1.2 Write property test for the export round trip in `tests/test_export.py`": {
+      "status": "passed",
+      "lastRunTimestamp": 1795358633796
+    },
+    "2.4 Write property test for the outgoing text cap": {
+      "status": "passed",
+      "lastRunTimestamp": 1795358930116
+    },
+    "2.5 Write property test that the token never leaks": {
+      "status": "passed",
+      "lastRunTimestamp": 1795359030241
+    },
+    "3.2 Write property test for the owner id": {
+      "status": "passed",
+      "lastRunTimestamp": 1795359257172
+    },
+    "3.3 Write property test for command normalisation": {
+      "status": "passed",
+      "lastRunTimestamp": 1795359341549
+    },
+    "3.4 Write property test for photo size selection": {
+      "status": "passed",
+      "lastRunTimestamp": 1795359422805
+    },
+    "3.6 Write property test for the incoming text cap": {
+      "status": "passed",
+      "lastRunTimestamp": 1795364282479
+    },
+    "3.7 Write property test for the allow-list gate": {
+      "status": "passed",
+      "lastRunTimestamp": 1795364368412
+    },
+    "3.8 Write property test for the rate limit with an injected list-backed clock": {
+      "status": "passed",
+      "lastRunTimestamp": 1795364455689
+    },
+    "3.9 Write property test for duplicate updates": {
+      "status": "passed",
+      "lastRunTimestamp": 1795364558932
+    },
+    "4.2 Write property test: nothing is saved without an accepted confirmation": {
+      "status": "passed",
+      "lastRunTimestamp": 1795366342112
+    },
+    "4.3 Write property test: at most one live keyboard per chat": {
+      "status": "passed",
+      "lastRunTimestamp": 1795366460515
+    },
+    "4.4 Write property test: stale callbacks have no effect": {
+      "status": "passed",
+      "lastRunTimestamp": 1795366590801
+    },
+    "4.5 Write property test: chats are isolated": {
+      "status": "passed",
+      "lastRunTimestamp": 1795366735336
+    },
+    "5.3 Write property test for poller offset and order": {
+      "status": "passed",
+      "lastRunTimestamp": 1795367152183
+    },
+    "5.4 Write property test for poller backoff with a fake stop event that records waits": {
+      "status": "passed",
+      "lastRunTimestamp": 1795367238496
+    },
+    "5.5 Write property test for the webhook secret": {
+      "status": "passed",
+      "lastRunTimestamp": 1795367326513
+    }
+  },
+  "executionHistory": {
+    "1.1 Create `khata/export.py` with `HEADER` and `build_xlsx(ledger, owner) -> bytes`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225368
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356241598
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795357665557
+      }
+    ],
+    "1.2 Write property test for the export round trip in `tests/test_export.py`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225399
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795357676129
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795358772876
+      }
+    ],
+    "1.3 Write unit test that `/api/export.xlsx` still returns the same workbook for a demo login": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225436
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795358781371
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795358875121
+      }
+    ],
+    "2.1 Add an autouse fixture in `tests/conftest.py` that removes `TELEGRAM_BOT_TOKEN`,": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225461
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356242305
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795357666542
+      }
+    ],
+    "2.2 Create `khata/telegram.py` with the constants, `TelegramError` and `TelegramAPI`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225492
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795357676178
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795358774114
+      }
+    ],
+    "2.3 Write request-shape unit tests with `FakeHTTP` in `tests/test_telegram.py`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225519
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795358781900
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795358875442
+      }
+    ],
+    "2.4 Write property test for the outgoing text cap": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225545
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795358885175
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795358944198
+      }
+    ],
+    "2.5 Write property test that the token never leaks": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225572
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795358950838
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359047747
+      }
+    ],
+    "3.1 Add the pure helpers to `khata/telegram.py`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225602
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359056103
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359185137
+      }
+    ],
+    "3.2 Write property test for the owner id": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225642
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359191764
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359272156
+      }
+    ],
+    "3.3 Write property test for command normalisation": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225668
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359278794
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359356188
+      }
+    ],
+    "3.4 Write property test for photo size selection": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225693
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359362960
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359436833
+      }
+    ],
+    "3.5 Implement `TelegramAdapter` message handling": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225720
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359443675
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795361154808
+      }
+    ],
+    "3.6 Write property test for the incoming text cap": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225747
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795361163385
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795364305343
+      }
+    ],
+    "3.7 Write property test for the allow-list gate": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225773
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795364316089
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795364382962
+      }
+    ],
+    "3.8 Write property test for the rate limit with an injected list-backed clock": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225798
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795364383844
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795364473010
+      }
+    ],
+    "3.9 Write property test for duplicate updates": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225825
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795364473566
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795364575962
+      }
+    ],
+    "3.10 Write unit tests for messages and commands": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225849
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795364576474
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795365112292
+      }
+    ],
+    "4.1 Implement the keyboard rule in `TelegramAdapter`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225875
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795365113062
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795365893540
+      }
+    ],
+    "4.2 Write property test: nothing is saved without an accepted confirmation": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225904
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795365894361
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366367737
+      }
+    ],
+    "4.3 Write property test: at most one live keyboard per chat": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225932
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366368251
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366478540
+      }
+    ],
+    "4.4 Write property test: stale callbacks have no effect": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225960
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366479152
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366609716
+      }
+    ],
+    "4.5 Write property test: chats are isolated": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356225995
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366610149
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366760408
+      }
+    ],
+    "4.6 Write scenario unit tests for the stale-button rule": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226033
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366761233
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366890949
+      }
+    ],
+    "5.1 Implement `next_delay`, `webhook_token` and `Poller` in `khata/telegram.py`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226059
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366891715
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366982032
+      }
+    ],
+    "5.2 Implement `make_router(adapter, secret)` with `POST /webhook/telegram`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226090
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366982858
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795367082835
+      }
+    ],
+    "5.3 Write property test for poller offset and order": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226117
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795367083741
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795367168557
+      }
+    ],
+    "5.4 Write property test for poller backoff with a fake stop event that records waits": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226142
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795367167964
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795367255114
+      }
+    ],
+    "5.5 Write property test for the webhook secret": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226178
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795367255692
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795367342662
+      }
+    ],
+    "5.6 Write unit tests for the poller and router": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226226
+      },
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795367343180
+      }
+    ],
+    "6. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226253
+      }
+    ],
+    "7.1 Wire Telegram into `create_app` in `khata/app.py`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226281
+      }
+    ],
+    "7.2 Write unit tests for app wiring with `create_app(\":memory:\", telegram_api=FakeAPI())`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226308
+      }
+    ],
+    "8.1 Add `export_doc` to `M` in `khata/flow.py` and the Telegram branch in `Bot._fresh`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226332
+      }
+    ],
+    "8.2 Send the document from `TelegramAdapter._send`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226358
+      }
+    ],
+    "8.3 Write unit tests for export through Telegram": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226387
+      }
+    ],
+    "9.1 Resolve the sheet owner in `create_app`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226414
+      }
+    ],
+    "9.2 Update `resolve_owner` in `khata/mcp_server.py`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226441
+      }
+    ],
+    "9.3 Write unit tests for owner precedence": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226467
+      }
+    ],
+    "10.1 Update `.env.example` and `render.yaml`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226492
+      }
+    ],
+    "10.2 Write smoke tests for the config files in `tests/test_deploy.py`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226521
+      }
+    ],
+    "10.3 Write `docs/TELEGRAM.md`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226549
+      }
+    ],
+    "10.4 Update `docs/SETUP.md`, `docs/SHEETS.md`, `README.md`, `docs/VIDEO.md`,": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226575
+      }
+    ],
+    "10.5 Mark WhatsApp optional and update steering": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226601
+      }
+    ],
+    "11. Final checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795356226627
+      }
+    ],
+    "1. Factor the xlsx builder into `khata/export.py`": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795358875157
+      }
+    ],
+    "2. Telegram API client and test isolation": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795359047785
+      }
+    ],
+    "3. Telegram adapter: gates, commands, text, voice and photos": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795365112333
+      }
+    ],
+    "4. Stale-button safety and the confirm step": [
+      {
+        "executionId": "d5800c00-4e15-4353-af9a-bb7e68497041",
+        "chatSessionId": "sess_87ec179d-693c-4eae-a6c0-c411df3cccb1",
+        "timestamp": 1795366890990
+      }
+    ]
+  }
+}

@@ -4,7 +4,7 @@ Your WhatsApp ledger gets copied to a Google Sheet. On free hosting, the app als
 sheet after a restart. It mirrors **one** owner: the WhatsApp number you set below. Browser demo accounts are
 not mirrored.
 
-Do the WhatsApp guide first, because the sheet mirrors entries you send from your phone.
+Do the Telegram guide first, because the sheet mirrors the entries you send from your phone.
 
 ## A. Create a service account (10 minutes)
 1. Go to https://console.cloud.google.com and sign in. If asked, accept the terms; no billing account is needed.
@@ -30,11 +30,9 @@ Move the key file out of Downloads into the repo folder as `sa.json` (it's cover
 ```
 KHATA_SHEET_ID=THIS_PART
 GOOGLE_APPLICATION_CREDENTIALS=sa.json
-KHATA_SHEET_OWNER_NUMBER=919876543210     # your WhatsApp number: country code + number, digits only
+KHATA_SHEET_OWNER_TELEGRAM_ID=123456789  # the number the Telegram bot replies to /id
 ```
-`KHATA_SHEET_OWNER_NUMBER` must be the same phone you message the test number from, written exactly as
-WhatsApp reports it (India: `91` + 10 digits). `WA_APP_SECRET` must already be set from the WhatsApp guide,
-because your owner id is derived from both.
+`KHATA_OWNER_SALT` must already be set from the Telegram guide and must never change, because your owner id is derived from it.
 
 Restart the server.
 

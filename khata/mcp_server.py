@@ -21,6 +21,10 @@ def resolve_owner() -> str:
     owner = os.environ.get("KHATA_MCP_OWNER")
     if owner:
         return owner
+    tg = os.environ.get("KHATA_SHEET_OWNER_TELEGRAM_ID")
+    if tg:
+        from .telegram import owner_for_chat
+        return owner_for_chat(tg, os.environ.get("KHATA_OWNER_SALT", ""))
     num, secret = os.environ.get("KHATA_SHEET_OWNER_NUMBER"), os.environ.get("WA_APP_SECRET")
     if num and secret:
         from .whatsapp import owner_for

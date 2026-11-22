@@ -26,7 +26,8 @@ WhatsApp with the message typed out. The app never sends anything itself.
 | Confirm / edit / cancel flow in en, hi, pa | `khata/flow.py` | local |
 | Voice notes: ffmpeg, then Whisper | `khata/voice.py` | Groq `whisper-large-v3` |
 | Bill photos: 3 validated fields | `khata/bills.py` | Groq `qwen/qwen3.8-27b` |
-| WhatsApp webhook | `khata/whatsapp.py` | Meta test number |
+| Telegram bot: polling locally, webhook on Render | `khata/telegram.py` | Telegram Bot API |
+| WhatsApp webhook (optional) | `khata/whatsapp.py` | Meta test number |
 | Google Sheet mirror and restore on boot | `khata/sheets.py` | Google Sheets API |
 | Séance reminders | `khata/reminders.py` | wa.me links |
 | AI budget and kill switch | `khata/guard.py` | local |
@@ -40,11 +41,12 @@ photos reply asking the user to type instead. `/health` reports `"mode": "demo"`
 
 ## Safety
 
-- Nothing is saved without a confirm step. Voice, bills and WhatsApp all go through the same flow.
+- Nothing is saved without a confirm step. Voice, bills, Telegram and WhatsApp all go through the same flow.
+  On Telegram only the newest Yes/No buttons work; an old tap is ignored.
   An unrelated message discards an unsaved entry, and the bot says so.
 - Text inside bill images is data. The customer and credit/payment are never taken from a bill.
 - WhatsApp webhooks are rejected unless the `X-Hub-Signature-256` HMAC matches. Repeated deliveries are ignored.
-- Audio is deleted right after transcription. WhatsApp owners are stored as salted hashes of the phone number.
+- Audio is deleted right after transcription. Telegram and WhatsApp owners are stored as salted hashes, not chat ids or phone numbers.
 - Demo data has no phone numbers, so tapping a ghost can't message a stranger.
 - Rate limits on chat and demo login. Idle demo accounts are purged after 7 days. Text colours pass WCAG AA (`scripts/contrast.py`).
 
@@ -75,7 +77,7 @@ For real voice and bill reading, start it with `GROQ_API_KEY=gsk_...` (free at c
 ## Deploy and set up services
 
 Everything is free and needs no card. Follow **[docs/SETUP.md](docs/SETUP.md)**: GitHub, Groq,
-Render (`render.yaml` blueprint plus a keepalive ping), the WhatsApp test number, and the Google Sheet.
+Render (`render.yaml` blueprint plus a keepalive ping), the Telegram bot, and the Google Sheet.
 
 ## Built with Kiro
 
@@ -86,7 +88,7 @@ Submission material: [docs/DEVPOST.md](docs/DEVPOST.md), [docs/VIDEO.md](docs/VI
 ## Tests
 
 `python -m pytest -q` covers hypothesis property tests for the ledger, eval regression, voice,
-WhatsApp, bills, the Groq clients (HTTP mocked), the sheet mirror and restore, séance reminders,
+Telegram (including the stale-button rule), WhatsApp, bills, the Groq clients (HTTP mocked), the sheet mirror and restore, séance reminders,
 khata-mcp over real stdio, and a full judge flow with AI off.
 
 MIT licensed.

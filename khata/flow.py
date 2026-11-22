@@ -36,6 +36,8 @@ M = {
                   "pa": "(ਬਿਨਾਂ ਸੇਵ ਕੀਤੀ ਐਂਟਰੀ ਹਟਾ ਦਿੱਤੀ ਗਈ।)"},
     "export": {"en": "Download your khata as Excel: {url}", "hi": "अपना खाता Excel में डाउनलोड करें: {url}",
                "pa": "ਆਪਣਾ ਖਾਤਾ Excel ਵਿੱਚ ਡਾਊਨਲੋਡ ਕਰੋ: {url}"},
+    "export_doc": {"en": "Here is your khata as an Excel file.", "hi": "आपका खाता Excel फ़ाइल में।",
+                   "pa": "ਤੁਹਾਡਾ ਖਾਤਾ Excel ਫ਼ਾਈਲ ਵਿੱਚ।"},
     "export_wa": {"en": "Excel export is available in the web app.", "hi": "Excel एक्सपोर्ट वेब ऐप में है।",
                   "pa": "Excel ਐਕਸਪੋਰਟ ਵੈੱਬ ਐਪ ਵਿੱਚ ਹੈ।"},
     "phone_saved": {"en": "Saved {name}'s WhatsApp number: {phone}.", "hi": "{name} का WhatsApp नंबर सेव किया: {phone}।",
@@ -121,6 +123,8 @@ class Bot:
             return self._remind(owner, extract(text).lang)
         if low in ("export", "/export", "एक्सपोर्ट", "ਐਕਸਪੋਰਟ"):
             lang = extract(text).lang
+            if source == "telegram":
+                return self._r(self.say("export_doc", lang), export=True)
             if source == "whatsapp":
                 return self._r(self.say("export_wa", lang))
             return self._r(self.say("export", lang, url=self.base_url + "/api/export.xlsx"), export=True)

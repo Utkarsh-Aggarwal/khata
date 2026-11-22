@@ -1,8 +1,10 @@
 """FastAPI app: web chat, ledger views, export, demo login, health."""
 from __future__ import annotations
 
+import asyncio
 import io
 import os
+from contextlib import asynccontextmanager
 import secrets
 import time
 from collections import defaultdict, deque
@@ -15,9 +17,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .bills import MAX_IMAGE as BILL_MAX, SAMPLE_BILL, BillError, BillReader, intro, to_extraction
+from .export import build_xlsx
 from .flow import Bot
 from .sheets import from_env as sheet_from_env
 from .whatsapp import make_router, owner_for
+from .telegram import (Poller, TelegramAdapter, TelegramAPI, make_router as tg_router, owner_for_chat,
+                       parse_allowed, webhook_token)
 from .guard import PaidGuard
 from .ledger import Ledger, format_rupees
 from .reminders import ghosts
@@ -50,10 +55,39 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "?"
 
 
+def sheet_owner(wa_app_secret: str | None = None) -> str | None:
+    """Whose ledger the Google Sheet mirrors. Telegram chat id wins over a WhatsApp number."""
+    tg = os.environ.get("KHATA_SHEET_OWNER_TELEGRAM_ID", "").strip()
+    if tg:
+        return owner_for_chat(tg, os.environ.get("KHATA_OWNER_SALT", ""))
+    num = os.environ.get("KHATA_SHEET_OWNER_NUMBER", "").strip()
+    if num:
+        return owner_for(num, wa_app_secret or os.environ.get("WA_APP_SECRET", ""))
+    return None
+
+
 def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
                transcriber=None, vision=None, wa_client=None, wa_verify_token=None,
-               wa_app_secret=None) -> FastAPI:
-    app = FastAPI(title="Khata", version="0.3.0")
+               wa_app_secret=None, telegram_api=None) -> FastAPI:
+    tg_state: dict = {}
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        mode, poller = tg_state.get("mode"), None
+        try:
+            if mode == "polling":
+                poller = Poller(tg_state["adapter"], tg_state["api"])
+                await asyncio.to_thread(poller.start)
+            elif mode == "webhook":
+                url = os.environ.get("KHATA_PUBLIC_URL", "").rstrip("/") + "/webhook/telegram"
+                await asyncio.to_thread(tg_state["api"].set_webhook, url, webhook_token(tg_state["secret"]))
+        except Exception as ex:          # never block startup on Telegram; /health shows it
+            tg_state["error"] = type(ex).__name__
+        yield
+        if poller:
+            await asyncio.to_thread(poller.stop)
+
+    app = FastAPI(title="Khata", version="0.4.0", lifespan=lifespan)
     ledger = Ledger(db_path or DB_PATH)
     bot = Bot(ledger, base_url=os.environ.get("KHATA_PUBLIC_URL", "").rstrip("/"))
     guard = guard or PaidGuard()
@@ -71,10 +105,8 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
         except BillError as e:
             return {"reply": str(e), "buttons": []}
 
-    # Sheet mirror for the demo shopkeeper's WhatsApp number (env-configured; off by default).
-    sheet_num = os.environ.get("KHATA_SHEET_OWNER_NUMBER")
-    mirror = sheet_from_env(ledger, owner_for(sheet_num, wa_app_secret or os.environ.get("WA_APP_SECRET", ""))
-                            if sheet_num else None)
+    # Sheet mirror for the shopkeeper's Telegram chat (or WhatsApp number); off by default.
+    mirror = sheet_from_env(ledger, sheet_owner(wa_app_secret))
     app.state.mirror = mirror
     if mirror:
         mirror.boot()            # before any request: rebuild the ledger if the host wiped the disk
@@ -82,6 +114,22 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
 
     app.include_router(make_router(bot, voice, wa_client, verify_token=wa_verify_token,
                                    app_secret=wa_app_secret, on_image=on_image))
+
+    # Telegram: the main shopkeeper channel. Polling locally (no tunnel), webhook on Render.
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    tg_adapter = None
+    if telegram_api is not None or token:
+        tg_api = telegram_api or TelegramAPI(token)
+        tg_adapter = TelegramAdapter(
+            bot, voice, tg_api, on_image=on_image, export=lambda o: build_xlsx(ledger, o),
+            salt=os.environ.get("KHATA_OWNER_SALT", ""),
+            allowed=parse_allowed(os.environ.get("TELEGRAM_ALLOWED_CHAT_IDS")))
+        mode = os.environ.get("TELEGRAM_MODE", "polling").strip().lower()
+        tg_state.update(api=tg_api, adapter=tg_adapter, mode=mode if mode in ("polling", "webhook") else "polling",
+                        secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET", ""))
+    app.state.telegram = tg_adapter
+    app.include_router(tg_router(tg_adapter if tg_state.get("mode") == "webhook" else None,
+                                 tg_state.get("secret")))
     hits: dict[str, deque] = defaultdict(deque)
     logins: dict[str, deque] = defaultdict(deque)
 
@@ -103,7 +151,10 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
         sheet = ({"sheet": "paused: restore failed" if mirror.paused else "on",
                   "sheet_pending": mirror.pending(), "sheet_boot": mirror.boot_result}
                  if mirror else {"sheet": "off"})
-        return {"ok": True, "mode": "live" if guard.on else "demo", **guard.status(), **sheet}
+        tg = tg_state.get("mode", "off")
+        if tg_state.get("error"):
+            tg += f" (startup failed: {tg_state['error']})"
+        return {"ok": True, "mode": "live" if guard.on else "demo", **guard.status(), **sheet, "telegram": tg}
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -197,8 +248,10 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
              "alive": live, "swap": "KHATA_STT_URL, KHATA_STT_MODEL"},
             {"part": "Eyes", "organ": "eyes", "impl": f"Groq {vis_model}" if live else "off: sample bill only",
              "alive": live, "swap": "KHATA_VISION_URL, KHATA_VISION_MODEL"},
-            {"part": "Voice box", "organ": "mouth", "impl": "WhatsApp Cloud API" if wa_on else "off: web chat only",
-             "alive": wa_on, "swap": "WA_TOKEN, WA_PHONE_ID, WA_APP_SECRET"},
+            {"part": "Voice box", "organ": "mouth",
+             "impl": (f"Telegram bot ({tg_state['mode']})" if tg_adapter else
+                      "WhatsApp Cloud API" if wa_on else "off: web chat only"),
+             "alive": bool(tg_adapter) or wa_on, "swap": "TELEGRAM_BOT_TOKEN (or WA_TOKEN)"},
             {"part": "Memory copy", "organ": "spine",
              "impl": ("Google Sheet mirror (paused: restore failed)" if mirror and mirror.paused
                       else "Google Sheet mirror + restore" if mirror else "off: .xlsx export"),
@@ -210,18 +263,8 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
 
     @app.get("/api/export.xlsx")
     def export(sid: str | None = Cookie(None)):
-        from openpyxl import Workbook
         o = owner_of(sid)
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Khata"
-        ws.append(["id", "customer", "kind", "rupees", "date", "due", "status"])
-        for e in ledger.entries(o, include_cancelled=True):
-            ws.append([e.id, e.customer, e.kind, e.paise / 100, e.entry_date, e.due_date, e.status])
-        buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-        return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        return StreamingResponse(io.BytesIO(build_xlsx(ledger, o)), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                  headers={"Content-Disposition": "attachment; filename=khata.xlsx"})
 
     @app.delete("/api/data")

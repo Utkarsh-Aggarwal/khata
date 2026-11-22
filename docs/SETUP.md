@@ -15,8 +15,9 @@ Open http://localhost:8765. `scripts/smoke.sh` in another terminal should print 
 2. Put it in `.env` as `GROQ_API_KEY=gsk_...` and restart. The page header should say **live**.
 3. When the free-tier limit is hit, the app tells the user to type instead.
 
-## 3. WhatsApp test number
-See **[WHATSAPP.md](WHATSAPP.md)**. Locally this needs a free tunnel (cloudflared) so Meta can reach your Mac.
+## 3. Telegram bot
+See **[TELEGRAM.md](TELEGRAM.md)**. Locally the app polls Telegram, so no tunnel is needed.
+(WhatsApp is optional: [WHATSAPP.md](WHATSAPP.md). New Meta accounts may not get access.)
 
 ## 4. Google Sheet mirror
 See **[SHEETS.md](SHEETS.md)**.
@@ -31,7 +32,7 @@ or WhatsApp. Note the "Heard:" text and whether the confirm step was right. Repo
 3. `scripts/smoke.sh https://<name>.onrender.com` should print `SMOKE OK`.
 4. Keep it awake: in GitHub **Settings > Secrets and variables > Actions > Variables**, add `KHATA_URL`. The
    `keepalive` workflow pings every 10 minutes. Add a cron-job.org ping as backup.
-5. Point the Meta webhook at `https://<name>.onrender.com/webhook/whatsapp` instead of the tunnel.
+5. Set `TELEGRAM_MODE=webhook` on Render and stop the local server; the app registers its own Telegram webhook.
 6. Keep it running until **January 29, 2027**.
 
 ## 7. Kiro MCP (optional)

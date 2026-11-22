@@ -11,7 +11,9 @@
 - [x] 9. Guardrails and deployment: budget, kill switch, rate limits, Render blueprint, keepalive (R9.2, R10)
 - [x] 10. Ghost page, séance reminders, Lab panel, WCAG AA check (R7, R9.3, R10.3)
 - [x] 11. khata-mcp read-only server with a real stdio test
-- [ ] 12. Live checks with real keys: Groq voice and vision, Meta test number, Google Sheet (needs the owner's accounts)
+- [ ] 12. Live checks with real keys: Groq voice and vision, Telegram bot (polling locally, webhook on Render), Google Sheet (needs the owner's accounts)
+  - The telegram-channel spec (`.kiro/specs/telegram-channel/`) supersedes WhatsApp as the primary
+    shopkeeper channel. WhatsApp (task 6) stays as an optional channel; the Meta test number check is optional.
 - [ ] 13. Voice eval on ~15 real recordings
 - [ ] 14. Deploy to Render; run `scripts/smoke.sh <url>`
 - [ ] 15. Submission: video, Devpost form, proof of enrollment

@@ -21,6 +21,16 @@ services:
         sync: false            # e.g. https://khata.onrender.com
       - key: GROQ_API_KEY
         sync: false            # free key from console.groq.com; blank = demo mode
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false            # from @BotFather
+      - key: TELEGRAM_MODE
+        value: webhook         # Render sleeps; an incoming webhook wakes it
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
+      - key: KHATA_OWNER_SALT
+        sync: false            # copy from your local .env so owner ids (and the sheet link) match
+      - key: KHATA_SHEET_OWNER_TELEGRAM_ID
+        sync: false            # the number the bot replies to /id
       - key: WA_VERIFY_TOKEN
         sync: false
       - key: WA_APP_SECRET

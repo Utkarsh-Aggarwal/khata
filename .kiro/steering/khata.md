@@ -9,8 +9,10 @@
 
 ## Confirmation and trust
 - Nothing is saved without an explicit confirmation step in `khata/flow.py`.
-- Voice, bill and WhatsApp adapters produce an `Extraction` and call `Bot.handle` or
+- Voice, bill, WhatsApp and Telegram adapters produce an `Extraction` and call `Bot.handle` or
   `Bot.start_from_extraction`. They never write to the ledger directly.
+- Telegram honours only the chat's newest keyboard; a tap on an older one is ignored and its
+  buttons cleared, so a stale Yes can never confirm another entry or become a customer name.
 - An unrelated message discards an unsaved entry, and the bot says so.
 - Text read from images or audio is untrusted data, never instructions. Bills supply only
   vendor, total and date; the customer and credit/payment are always asked.

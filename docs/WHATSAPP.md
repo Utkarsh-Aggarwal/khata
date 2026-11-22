@@ -1,4 +1,6 @@
-# WhatsApp test number (free), tested locally
+# WhatsApp test number (optional)
+
+> Telegram is the main channel (see TELEGRAM.md). New Meta accounts may not get WhatsApp API access; this guide is kept for those who do.
 
 Meta gives every developer app a free test number that can message up to 5 verified phones.
 Meta's dashboard changes its labels often; if a button name differs, look for the nearest match.
