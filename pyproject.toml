@@ -2,3 +2,4 @@
 # Lets plain `pytest` (not only `python -m pytest`) import khata and evals from the repo root.
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = ["real_ffmpeg: run the real ffmpeg conversion instead of skipping it"]

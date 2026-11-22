@@ -77,6 +77,7 @@ def test_voice_endpoint_demo_mode():
     assert c.get("/health").json()["mode"] == "demo"
 
 
+@pytest.mark.real_ffmpeg
 @pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="ffmpeg not installed")
 def test_ffmpeg_converts_to_16k_mono(tmp_path):
     import subprocess
