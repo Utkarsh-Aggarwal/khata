@@ -32,7 +32,8 @@ UNIT_ALIASES = {
 AMOUNT_UNITS = {"g", "ml"}            # the number given is the price of that quantity
 REMOVE_W = {"hatao", "hata", "hatado", "remove", "delete", "nikalo", "nikal", "हटाओ", "हटा", "निकालो", "ਹਟਾਓ"}
 FILLER = {"rs", "rs.", "₹", "rate", "ka", "ki", "ke", "add", "aur", "and", "@", "per", "x", "×", "का", "की",
-          "के", "और", "ਦਾ", "ਦੀ", "ਅਤੇ", "/-"}
+          "के", "और", "ਦਾ", "ਦੀ", "ਅਤੇ", "/-", "rupay", "rupaye", "rupees", "rupee", "rupya", "रुपये", "रुपए", "रुपया",
+          "रूपये", "रु", "ਰੁਪਏ", "ਰੁਪਈਏ", "wala", "wali", "वाला", "वाली"}
 DONE_W = {"done", "ho gaya", "hogaya", "ho gya", "bas", "finish", "ok done", "हो गया", "बस", "ਹੋ ਗਿਆ", "bill:done", "✅"}
 CANCEL_W = {"cancel", "bill:cancel", "chhodo", "rehne do", "nahi chahiye", "रद्द", "ਰੱਦ"}
 
@@ -83,7 +84,7 @@ def _money(s: str) -> int:
 
 def parse_line(seg: str) -> Line | None:
     """One item from text. Returns None if there is no item name."""
-    s = seg.translate(DIGITS).replace(",", " ").strip()
+    s = seg.translate(DIGITS).replace(",", " ").replace("।", " ").replace("॥", " ").strip()
     qty, unit, rate, total = None, "", None, None
     m = QTY_X_RATE.search(s)
     if m:
@@ -102,7 +103,7 @@ def parse_line(seg: str) -> Line | None:
             total = _money(nums[0])
         elif rate is None:
             rate = _money(nums[-1])
-    words = [w.strip(".:;-") for w in s.split()]
+    words = [w.strip(".:;-।॥") for w in s.split()]
     name = " ".join(w for w in words if w and w.lower() not in FILLER and w not in ("/",))
     if not name_key(name):
         return None
@@ -111,7 +112,7 @@ def parse_line(seg: str) -> Line | None:
 
 
 def segments(text: str) -> list[str]:
-    return [p for p in re.split(r"[,\n;]+|\s+aur\s+|\s+and\s+|\s+और\s+", text) if p.strip()]
+    return [p for p in re.split(r"[,\n;।]+|\s+aur\s+|\s+and\s+|\s+और\s+", text) if p.strip()]
 
 
 def _find(draft: Draft, name: str) -> Line | None:

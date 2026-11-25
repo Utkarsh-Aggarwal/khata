@@ -11,6 +11,7 @@ Replies are plain text (no parse_mode): customer names and transcripts are untru
 from __future__ import annotations
 
 import hashlib
+import secrets
 import hmac
 import json
 import logging
@@ -53,7 +54,7 @@ MENU = [("bill", "Make a bill / बिल बनाओ"), ("dues", "Udhaar balan
         ("rates", "Your item rates / रेट लिस्ट"), ("today", "Today's expenses / आज का खर्च"),
         ("expenses", "This month's expenses / महीने का खर्च"), ("remind", "Reminder links / तगादा"),
         ("undo", "Undo last entry / पिछली एंट्री हटाओ"), ("export", "Excel file / एक्सेल"),
-        ("help", "How to use / मदद"), ("id", "Your chat id")]
+        ("invite", "Add another phone to this shop"), ("help", "How to use / मदद"), ("id", "Your chat id")]
 
 log = logging.getLogger("khata.telegram")
 
@@ -235,6 +236,7 @@ class TelegramAdapter:
         self.seen = Seen()
         self.keyboards: dict[int, int] = {}      # chat_id -> Latest_Keyboard message id
         self.hits: dict[int, deque] = defaultdict(deque)
+        self.invites: dict[str, tuple[str, float]] = {}    # code -> (shop owner, expires at)
 
     def handle_update(self, update: dict) -> None:
         with self.lock:
@@ -247,7 +249,41 @@ class TelegramAdapter:
                 self._on_message(update["message"])
 
     def _owner(self, chat_id: int) -> str:
-        return owner_for_chat(chat_id, self._salt)
+        """The shop khata this chat writes to (several phones can share one shop)."""
+        own = owner_for_chat(chat_id, self._salt)
+        ledger = getattr(self.bot, "ledger", None)
+        return ledger.shop_of(own) if ledger is not None and hasattr(ledger, "shop_of") else own
+
+    def _link_command(self, chat_id: int, cmd: str, text: str) -> dict | None:
+        """/invite on the main phone gives a code; /join CODE on another phone links it to the shop."""
+        ledger = getattr(self.bot, "ledger", None)
+        if ledger is None or not hasattr(ledger, "link"):
+            return None
+        own = owner_for_chat(chat_id, self._salt)
+        now = self.clock()
+        if cmd == "invite":
+            shop = ledger.shop_of(own)
+            code = f"{secrets.randbelow(900000) + 100000}"
+            self.invites = {c: v for c, v in self.invites.items() if v[1] > now}
+            self.invites[code] = (shop, now + 600)
+            return {"reply": f"🔗 To add another phone to this shop, send this from that phone within 10 minutes:\n"
+                             f"/join {code}\nEverything it records will go into this khata and Google Sheet."}
+        if cmd == "join":
+            parts = text.split()
+            code = parts[1] if len(parts) > 1 else ""
+            hit = self.invites.pop(code, None)
+            if not hit or hit[1] < now:
+                return {"reply": "That code is wrong or has expired. Ask the main phone to send /invite again."}
+            shop = hit[0]
+            if shop == own:
+                return {"reply": "This phone is already the main phone of this shop."}
+            moved = ledger.link(own, shop)
+            return {"reply": f"✅ This phone is now linked to the shop. {moved} earlier record(s) were moved into the "
+                             "shop's khata. Send /leave to unlink."}
+        if cmd == "leave":
+            return {"reply": "Unlinked. This phone has its own khata again." if ledger.unlink(own)
+                    else "This phone is not linked to another shop."}
+        return None
 
     def _admit(self, chat: dict) -> bool:
         chat_id = chat["id"]
@@ -278,6 +314,10 @@ class TelegramAdapter:
             text = msg.get("text")
             if isinstance(text, str):
                 cmd = command_of(text)
+                if cmd in ("invite", "join", "leave"):
+                    r = self._link_command(chat_id, cmd, text)
+                    if r:
+                        return self._send(chat_id, owner, r)
                 if cmd == "id":
                     return self._send(chat_id, owner, {"reply": (
                         f"Your chat id is {chat_id}. Put it in KHATA_SHEET_OWNER_TELEGRAM_ID "

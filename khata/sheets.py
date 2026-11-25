@@ -1,9 +1,9 @@
 """Google Sheet view of one shopkeeper's khata. SQLite stays the source of truth.
 
-The Transactions tab and the Dues tab are redrawn from the database whenever anything
+The Udhaar, Bills, Entries and Dues tabs are redrawn from the database whenever anything
 changes (khata/render.py), so the sheet, the Excel export and the bot always agree. Hand
-edits in the sheet are overwritten. Tabs from older layouts (Khata, Summary) are removed
-once the new ones are written.
+edits in the sheet are overwritten. Tabs from older layouts (Transactions, Khata, Summary)
+are removed once the new ones are written.
 
 On free hosting the disk is wiped on restart, so on boot an empty database is rebuilt from the
 sheet (restore). Restore reads the current layout and both older ones. If restore fails, the
@@ -23,8 +23,8 @@ from typing import Protocol
 from . import render
 from .ledger import Ledger
 
-TAB, DUES_TAB = render.TX_TAB, render.DUES_TAB
-LEGACY_TABS = ("Khata", "Summary")
+TAB = render.UDHAAR_TAB
+LEGACY_TABS = ("Transactions", "Khata", "Summary")
 LAYOUT_V1 = ["entry_id", "date", "customer", "kind"]        # first columns of the oldest layout
 LAYOUT_V2 = ["id", "date", "type", "name"]                  # 9-column layout used briefly
 LAYOUT_V3 = ["ref", "date", "type", "name", "category"]     # 13-column layout used briefly
@@ -163,13 +163,16 @@ class SheetMirror:
             if (self.ledger.db.execute("SELECT 1 FROM entries LIMIT 1").fetchone()
                     or self.ledger.db.execute("SELECT 1 FROM expenses LIMIT 1").fetchone()):
                 return {"restored": 0, "skipped": 0, "reason": "database not empty"}
-        rows = self.client.read_tab(TAB) or self.client.read_tab("Khata")
+        udhaar, entries = self.client.read_tab(render.UDHAAR_TAB), self.client.read_tab(render.ENTRIES_TAB)
+        if udhaar or entries:
+            return self._restore_split(udhaar, entries, self.client.read_tab(render.BILLS_TAB))
+        rows = self.client.read_tab("Transactions") or self.client.read_tab("Khata")
         if not rows:
             return {"restored": 0, "skipped": 0, "reason": "new sheet"}
         head = [str(c).strip() for c in rows[0]]
         low = [c.lower() for c in head]
         if head[:len(render.COLUMNS)] == render.COLUMNS:
-            parse = render.parse_row
+            parse = lambda r: render.parse_row(head, r)  # noqa: E731
         elif low[:5] == LAYOUT_V3:
             parse = _parse_v3
         elif low[:4] == LAYOUT_V2:
@@ -187,6 +190,39 @@ class SheetMirror:
                     self._insert(parse(row))
                     restored += 1
                 except (ValueError, TypeError, IndexError, sqlite3.IntegrityError):
+                    skipped += 1
+            self.ledger.db.commit()
+        return {"restored": restored, "skipped": skipped}
+
+    def _restore_split(self, udhaar, entries, bills) -> dict:
+        restored = skipped = 0
+        with self.ledger.lock:
+            for tab in (udhaar, entries):
+                if not tab:
+                    continue
+                head = [str(c).strip() for c in tab[0]]
+                for row in tab[1:]:
+                    if not row or not str(row[0]).strip():
+                        continue
+                    try:
+                        self._insert(render.parse_row(head, row))
+                        restored += 1
+                    except (ValueError, TypeError, IndexError, sqlite3.IntegrityError):
+                        skipped += 1
+            for row in (bills or [])[1:]:
+                if not row or not str(row[0]).strip():
+                    continue
+                try:
+                    b = render.parse_bill(row)
+                    if not DATE.fullmatch(b["date"]) or b["id"] <= 0 or b["total"] <= 0:
+                        raise ValueError(row)
+                    self.ledger.db.execute(
+                        "INSERT INTO bills(id,owner,customer,items,total,payment,bill_date,created_at) "
+                        "VALUES(?,?,?,?,?,?,?,?)",
+                        (b["id"], self.owner, b["customer"], json.dumps(b["items"], ensure_ascii=False), b["total"],
+                         b["payment"], b["date"], b["date"] + "T00:00:00+00:00"))
+                    restored += 1
+                except (ValueError, TypeError, IndexError, KeyError, sqlite3.IntegrityError):
                     skipped += 1
             self.ledger.db.commit()
         return {"restored": restored, "skipped": skipped}
@@ -215,28 +251,27 @@ class SheetMirror:
              d["via"], created))
 
     # ---- redraw ------------------------------------------------------------------------
-    def _views(self) -> tuple[list[list], list[list], str]:
-        tx = [render.COLUMNS] + render.transaction_rows(self.ledger, self.owner)
-        dues = render.dues_rows(self.ledger, self.owner)
-        fp = hashlib.sha256(json.dumps([tx, dues], ensure_ascii=False, default=str).encode()).hexdigest()
-        return tx, dues, fp
+    def _views(self) -> tuple[dict, str]:
+        tabs = render.all_tabs(self.ledger, self.owner)
+        fp = hashlib.sha256(json.dumps(tabs, ensure_ascii=False, default=str).encode()).hexdigest()
+        return tabs, fp
 
     def pending(self) -> int:
         """1 if the sheet is behind the database, else 0."""
-        return int(self._views()[2] != self._written)
+        return int(self._views()[1] != self._written)
 
     def sync(self) -> dict:
         if self.paused:
             return {"synced": 0, "failed": 0, "pending": self.pending(), "paused": True}
-        khata, summary, fp = self._views()
+        tabs, fp = self._views()
         if fp == self._written:
             return {"synced": 0, "failed": 0, "pending": 0}
         now = self.clock()
         if now < self._next_at:
             return {"synced": 0, "failed": 0, "pending": 1}
         try:
-            self.client.write_tab(TAB, khata)
-            self.client.write_tab(DUES_TAB, summary)
+            for name, rows in tabs.items():
+                self.client.write_tab(name, rows)
             for old in LEGACY_TABS:              # new tabs written: the old layout can go
                 try:
                     self.client.delete_tab(old)
@@ -247,7 +282,8 @@ class SheetMirror:
             self._next_at = now + min(300, 2 ** self._fails)
             return {"synced": 0, "failed": 1, "pending": 1}
         self._written, self._fails, self._next_at = fp, 0, 0.0
-        return {"synced": len(khata) - 1, "failed": 0, "pending": 0}
+        return {"synced": sum(len(tabs[t]) - 1 for t in (render.UDHAAR_TAB, render.ENTRIES_TAB)), "failed": 0,
+                "pending": 0}
 
     def poke(self) -> None:
         """A change was committed: redraw now instead of waiting for the next check."""

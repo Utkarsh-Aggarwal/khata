@@ -39,6 +39,13 @@ def test_parse_line(text, name, qty, unit, rate, amount):
     assert (l.name, l.qty, l.unit, l.rate, l.amount) == (name, qty, unit, rate, amount)
 
 
+def test_voice_style_bill_drops_rupees_and_danda():
+    """Real bill from a Hindi voice note: 'आटा रुपये 2 kg', 'साबुन रुपये।' were saved as item names."""
+    d = billing.Draft()
+    billing.apply(d, "आटा 2 kg 45 रुपये, चीनी 3 kg 60 रुपये, साबुन 2 x 40 रुपये।", lambda n: None)
+    assert [(l.name, l.amount) for l in d.lines] == [("आटा", 9000), ("चीनी", 18000), ("साबुन", 8000)]
+
+
 def test_edits_rate_qty_remove_and_price_memory():
     d = billing.Draft()
     prices = {"cheeni": 4800}

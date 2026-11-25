@@ -27,8 +27,16 @@ class FakeSheet:
         self.tabs.pop(tab, None)
 
     # helpers for assertions
+    def _rows(self, tab):
+        t = self.tabs.get(tab, [])
+        return [dict(zip(t[0], r)) for r in t[1:]] if t else []
+
     def khata(self):
-        return [dict(zip(render.COLUMNS, r)) for r in self.tabs.get("Transactions", [])[1:]]
+        """Udhaar and Entries rows together, by date (what the old Transactions tab showed)."""
+        return sorted(self._rows("Udhaar") + self._rows("Entries"), key=lambda r: (r["Date"], r["Recorded on"]))
+
+    def bills(self):
+        return self._rows("Bills")
 
     def dues(self):
         return {r[0]: dict(zip(render.DUES_COLUMNS, r)) for r in self.tabs.get("Dues", [])[1:] if r}
@@ -54,15 +62,17 @@ def test_transactions_table_has_only_the_agreed_columns_sorted_by_date():
     lg.add_entry("o", "Ramesh", "payment", 50000, entry_date="2026-11-22", source="voice")
     lg.add_expense("o", "electricity", 200000, entry_date="2026-11-22", source="voice")
     assert m.sync()["synced"] == 4
-    assert sh.tabs["Transactions"][0] == ["Ref", "Date", "Type", "Name", "Amount (₹)", "Due", "Via", "Note",
-                                          "Recorded on"]
+    assert sh.tabs["Udhaar"][0] == ["Ref", "Date", "Type", "Name", "Amount (₹)", "Due", "Via", "Note",
+                                    "Recorded on"]
+    assert sh.tabs["Entries"][0] == ["Ref", "Date", "Type", "Name", "Amount (₹)", "Via", "Note", "Recorded on"]
+    assert {r["Ref"][0] for r in sh._rows("Udhaar")} == {"K"} and {r["Ref"][0] for r in sh._rows("Entries")} == {"E"}
     for gone in ("Category", "Out (₹)", "In (₹)", "Status"):
-        assert gone not in sh.tabs["Transactions"][0]
+        assert gone not in sh.tabs["Udhaar"][0]
     rows = sh.khata()
     assert [r["Date"] for r in rows] == sorted(r["Date"] for r in rows)
     assert {k: rows[0][k] for k in ("Ref", "Type", "Name", "Amount (₹)", "Via", "Note")} == {
         "Ref": "E-1", "Type": "Expense (Purchase)", "Name": "GUJARAT FREIGHT TOOLS", "Amount (₹)": 4490,
-        "Via": "Bill photo", "Note": ""}
+        "Via": "Bill", "Note": ""}
     assert _cell(sh, "K-2", "Type") == "Payment received" and _cell(sh, "K-2", "Amount (₹)") == 500
     assert _cell(sh, "E-2", "Type") == "Expense (Electricity)"
 
@@ -113,10 +123,10 @@ def test_sheet_updates_right_after_a_change():
     assert sh.khata() == []
 def test_old_tabs_are_removed_after_the_new_ones_are_written():
     lg, sh = Ledger(), FakeSheet()
-    sh.tabs["Khata"], sh.tabs["Summary"] = [["old"]], [["old"]]
+    sh.tabs["Khata"], sh.tabs["Summary"], sh.tabs["Transactions"] = [["old"]], [["old"]], [["old"]]
     lg.add_entry("o", "A", "credit", 100)
     SheetMirror(lg, sh, "o", Clock()).sync()
-    assert set(sh.tabs) == {"Transactions", "Dues"}
+    assert set(sh.tabs) == {"Udhaar", "Bills", "Entries", "Dues"}
 
 def test_redraw_only_when_something_changed():
     lg, sh = Ledger(), FakeSheet()
@@ -134,7 +144,7 @@ def test_hand_edits_are_overwritten_by_the_database():
     m = SheetMirror(lg, sh, "o", Clock())
     lg.add_entry("o", "A", "credit", 100)
     m.sync()
-    sh.tabs["Transactions"].append(["junk", "typed by hand"])
+    sh.tabs["Udhaar"].append(["junk", "typed by hand"])
     lg.add_entry("o", "A", "credit", 100)
     m.sync()
     assert all(r["Ref"] != "junk" for r in sh.khata())
@@ -170,7 +180,7 @@ def test_restore_round_trip_in_current_layout():
     lg.add_entry("shop", "Sita", "credit", 900, entry_date="2026-11-03")
     lg.undo_last("shop")                               # undone rows are not in the sheet
     m.sync()
-    before = [list(r) for r in sh.tabs["Transactions"]]
+    before = {t: [list(r) for r in sh.tabs[t]] for t in ("Udhaar", "Entries", "Dues")}
 
     fresh = Ledger()                                   # the host wiped the disk
     m2 = SheetMirror(fresh, sh, "shop", Clock())
@@ -180,7 +190,7 @@ def test_restore_round_trip_in_current_layout():
     assert {x.vendor for x in fresh.expenses("shop")} == {"SUNRISE ENTERPRISE", ""}
     assert fresh.entries("shop")[0].due_date == "2026-11-10"
     m2.sync()
-    assert sh.tabs["Transactions"] == before           # identical redraw after restore
+    assert {t: sh.tabs[t] for t in ("Udhaar", "Entries", "Dues")} == before   # identical redraw
     restored_ids = [e.id for e in fresh.entries("shop")]
     assert fresh.add_entry("shop", "Mohan", "credit", 100) > max(restored_ids)   # ids continue
 
@@ -250,7 +260,7 @@ def test_failed_restore_pauses_so_an_empty_db_never_overwrites_the_sheet():
     lg = Ledger()
     m = SheetMirror(lg, sh, "shop", Clock())
     assert m.boot(attempts=2, wait=0) == {"error": "ConnectionError"} and m.paused
-    assert m.sync()["paused"] is True and len(sh.tabs["Transactions"]) == 2
+    assert m.sync()["paused"] is True and len(sh.tabs["Transactions"]) == 2 and "Udhaar" not in sh.tabs
 
 
 def test_nonempty_db_is_not_restored_over():
@@ -295,3 +305,27 @@ def test_google_client_request_shapes():
     assert ("post", "/values/Summary%21A%3AZ:clear") in kinds
     put = [kw for k, _, kw in c.s.calls if k == "put"][0]
     assert put["params"]["valueInputOption"] == "RAW" and put["json"] == {"values": [["a", 1]]}
+
+
+def test_bills_tab_and_restore_keeps_bill_numbers():
+    from khata.flow import Bot
+    lg, sh = Ledger(), FakeSheet()
+    b = Bot(lg, mode_prefixes=("tg-",))
+    o = "tg-shop"
+    for items, pay in (("atta 2 kg 45, sabun 2 x 35", "pay:cash"), ("tel 1 L 180", "pay:udhaar")):
+        b.handle(o, items); b.handle(o, "mode:bill"); b.handle(o, "bill:done"); b.handle(o, pay)
+    b.handle(o, "Ramesh")
+    SheetMirror(lg, sh, o, Clock()).sync()
+    assert sh.tabs["Bills"][0] == ["Bill No", "Date", "Customer", "Items", "Total (₹)", "Payment"]
+    bills = sh.bills()
+    assert [(x["Bill No"], x["Customer"], x["Total (₹)"], x["Payment"]) for x in bills] == [
+        (1, "Cash customer", 160, "Cash"), (2, "Ramesh", 180, "Udhaar")]
+    assert bills[0]["Items"] == "Atta 2 kg × ₹45 = ₹90; Sabun 2 × ₹35 = ₹70"
+    assert sorted(r["Type"] for r in sh.khata()) == ["Money in (Sale)", "Udhaar given"]
+    fresh = Ledger()
+    r = SheetMirror(fresh, sh, o, Clock()).boot()
+    assert r == {"restored": 4, "skipped": 0}
+    assert fresh.add_bill(o, None, [], 100, "cash") == 3                  # numbering continues
+    sh2 = FakeSheet()
+    SheetMirror(fresh, sh2, o, Clock()).sync()
+    assert sh2.bills()[0]["Items"] == bills[0]["Items"]

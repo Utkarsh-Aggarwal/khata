@@ -58,7 +58,7 @@ def test_export_round_trip(ops):
     assert data[:2] == b"PK"
 
     ws = load_workbook(io.BytesIO(data)).active
-    assert ws.title == "Transactions"
+    assert ws.title == "Udhaar"
     rows = list(ws.iter_rows(values_only=True))
     assert list(rows[0]) == HEADER
     body = rows[1:]
@@ -82,7 +82,7 @@ def test_export_round_trip(ops):
 
 def _rows(data: bytes) -> list[tuple]:
     ws = load_workbook(io.BytesIO(data)).active
-    assert ws.title == "Transactions"
+    assert ws.title == "Udhaar"
     return list(ws.iter_rows(values_only=True))
 
 
@@ -121,4 +121,4 @@ def test_api_export_serves_build_xlsx_for_demo_login():
     assert list(rows[0]) == HEADER
     assert sorted(row[0] for row in rows[1:]) == sorted(f"K-{e.id}" for e in entries if e.status == "active")
     assert "Stranger" not in {row[3] for row in rows[1:]}
-    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Transactions", "Dues"]
+    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Udhaar", "Bills", "Entries", "Dues"]

@@ -33,6 +33,8 @@ CREATE INDEX IF NOT EXISTS ix_expenses_owner ON expenses(owner, entry_date);
 CREATE TABLE IF NOT EXISTS prices(
   owner TEXT NOT NULL, key TEXT NOT NULL, name TEXT NOT NULL, rate INTEGER NOT NULL CHECK(rate > 0),
   unit TEXT DEFAULT '', updated_at TEXT NOT NULL, PRIMARY KEY(owner, key));
+CREATE TABLE IF NOT EXISTS links(
+  member TEXT PRIMARY KEY, shop TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS bills(
   id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, customer TEXT, items TEXT NOT NULL,
   total INTEGER NOT NULL, payment TEXT NOT NULL CHECK(payment IN ('cash','udhaar')),
@@ -380,6 +382,53 @@ class Ledger:
                  date.today().isoformat(), datetime.now(timezone.utc).isoformat()))
             self.db.commit()
             return cur.lastrowid
+
+    # ---- several phones, one shop ------------------------------------
+    def shop_of(self, member: str) -> str:
+        """The khata this chat writes to: its linked shop, else its own."""
+        with self.lock:
+            r = self.db.execute("SELECT shop FROM links WHERE member=?", (member,)).fetchone()
+        return r["shop"] if r else member
+
+    def members(self, shop: str) -> list[str]:
+        with self.lock:
+            return [r["member"] for r in self.db.execute("SELECT member FROM links WHERE shop=?", (shop,))]
+
+    def link(self, member: str, shop: str) -> int:
+        """Join `member` to `shop` and move the member's own records into the shop's khata.
+        Returns how many entries and expenses moved."""
+        if member == shop:
+            raise LedgerError("cannot link a chat to itself")
+        with self.lock:
+            moved = self._merge_owner(member, shop)
+            self.db.execute("INSERT OR REPLACE INTO links(member,shop,created_at) VALUES(?,?,?)",
+                            (member, shop, datetime.now(timezone.utc).isoformat()))
+            self.db.execute("UPDATE links SET shop=? WHERE shop=?", (shop, member))   # no chains
+            self._commit()
+            return moved
+
+    def unlink(self, member: str) -> bool:
+        with self.lock:
+            n = self.db.execute("DELETE FROM links WHERE member=?", (member,)).rowcount
+            self._commit()
+            return bool(n)
+
+    def _merge_owner(self, src: str, dst: str) -> int:
+        """Caller holds the lock. Customers are matched by name, so Ramesh stays one person."""
+        moved = 0
+        for c in self.db.execute("SELECT * FROM customers WHERE owner=?", (src,)).fetchall():
+            target = self.get_or_create_customer(dst, c["name"])
+            moved += self.db.execute("UPDATE entries SET owner=?, customer_id=? WHERE owner=? AND customer_id=?",
+                                     (dst, target, src, c["id"])).rowcount
+            if c["phone"]:
+                self.db.execute("UPDATE customers SET phone=COALESCE(phone, ?) WHERE id=?", (c["phone"], target))
+        moved += self.db.execute("UPDATE expenses SET owner=? WHERE owner=?", (dst, src)).rowcount
+        self.db.execute("UPDATE bills SET owner=? WHERE owner=?", (dst, src))
+        self.db.execute("INSERT OR IGNORE INTO prices(owner,key,name,rate,unit,updated_at) "
+                        "SELECT ?,key,name,rate,unit,updated_at FROM prices WHERE owner=?", (dst, src))
+        for t in ("prices", "aliases", "customers"):
+            self.db.execute(f"DELETE FROM {t} WHERE owner=?", (src,))
+        return moved
 
     # ---- privacy ---------------------------------------------------
     def delete_owner_data(self, owner: str) -> None:
