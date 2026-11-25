@@ -123,7 +123,9 @@ def test_sheet_updates_right_after_a_change():
     assert sh.khata() == []
 def test_old_tabs_are_removed_after_the_new_ones_are_written():
     lg, sh = Ledger(), FakeSheet()
-    sh.tabs["Khata"], sh.tabs["Summary"], sh.tabs["Transactions"] = [["old"]], [["old"]], [["old"]]
+    sh.tabs["Khata"] = [["entry_id", "date", "customer", "kind", "rupees"]]
+    sh.tabs["Summary"] = [["Khata summary", "as of 2026-11-25"]]
+    sh.tabs["Transactions"] = [list(render.COLUMNS)]
     lg.add_entry("o", "A", "credit", 100)
     SheetMirror(lg, sh, "o", Clock()).sync()
     assert set(sh.tabs) == {"Udhaar", "Bills", "Entries", "Dues", "Rates", "Customers", "Settings"}
@@ -328,3 +330,14 @@ def test_bills_tab_and_restore_keeps_bill_numbers():
     sh2 = FakeSheet()
     SheetMirror(fresh, sh2, o, Clock()).sync()
     assert sh2.bills()[0]["Items"] == bills[0]["Items"]
+
+
+def test_shopkeepers_own_tabs_are_never_touched():
+    lg, sh = Ledger(), FakeSheet()
+    sh.tabs["Khata"] = [["My notes", "x"], ["call Ramesh", ""]]        # shopkeeper's own tab, same name
+    sh.tabs["Summary"] = [["Month", "Profit"], ["Nov", 900]]
+    sh.tabs["Suppliers"] = [["Name", "Phone"], ["Gupta", "98765"]]
+    lg.add_entry("o", "A", "credit", 100)
+    SheetMirror(lg, sh, "o", Clock()).sync()
+    assert sh.tabs["Khata"][1] == ["call Ramesh", ""] and sh.tabs["Summary"][1] == ["Nov", 900]
+    assert sh.tabs["Suppliers"] == [["Name", "Phone"], ["Gupta", "98765"]]

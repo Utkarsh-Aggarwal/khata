@@ -331,9 +331,13 @@ class SheetMirror:
                     self.client.write_tab(name, rows)
                     wrote += 1
             if not self._legacy_done:
-                for old in LEGACY_TABS:              # new tabs written: the old layout can go
+                # The old layout's tabs can go, but only if they are still ours: a shopkeeper's own tab
+                # that happens to be called "Khata" or "Summary" is never deleted.
+                for old in LEGACY_TABS:
                     try:
-                        self.client.delete_tab(old)
+                        rows = self.client.read_tab(old)
+                        if rows and self._is_old_layout(old, rows[0]):
+                            self.client.delete_tab(old)
                     except Exception:
                         pass
                 self._legacy_done = True
@@ -347,6 +351,15 @@ class SheetMirror:
         n = sum(len(tabs[t]) - 1 for t in (render.UDHAAR_TAB, render.ENTRIES_TAB)) if wrote else 0
         return {"synced": n, "failed": 0, "pending": 0, **({"imported": self.last_import} if any(
             self.last_import.values()) else {})}
+
+    @staticmethod
+    def _is_old_layout(tab: str, header: list) -> bool:
+        low = [str(c).strip().lower() for c in header]
+        if tab == "Summary":
+            return bool(low) and low[0] in ("khata summary",) or low[:1] == [
+                "customer balances (positive = they owe you, negative = you owe them)"]
+        return (low[:4] in (LAYOUT_V1, LAYOUT_V2) or low[:5] == LAYOUT_V3
+                or [str(c).strip() for c in header[:len(render.COLUMNS)]] == render.COLUMNS)
 
     # what the bot wrote last, per editable tab: {key: tuple of editable cells}
     EDIT_COLS = {render.UDHAAR_TAB: ["Date", "Type", "Name", "Amount (₹)", "Due", "Note"],
