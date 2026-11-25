@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 import khata.voice
@@ -10,7 +12,18 @@ TELEGRAM_ENV = (
     "TELEGRAM_ALLOWED_CHAT_IDS",
     "KHATA_OWNER_SALT",
     "KHATA_SHEET_OWNER_TELEGRAM_ID",
+    # Google Sheets: without credentials the app makes no sheet pool, so no test reads a real sheet.
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_SERVICE_ACCOUNT_JSON",
+    "KHATA_SHEET_ID",
+    "KHATA_REGISTRY_SHEET_ID",
 )
+
+
+# khata/app.py builds `app = create_app()` on import. Strip the settings now, before any test
+# module imports it, or a shell with .env loaded would start a mirror on the real Google Sheet.
+for _name in TELEGRAM_ENV + ("KHATA_DB",):
+    os.environ.pop(_name, None)
 
 
 @pytest.fixture(autouse=True)

@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from .bills import MAX_IMAGE as BILL_MAX, SAMPLE_BILL, SAMPLE_KACHA, BillError, BillReader, intro, to_extraction
 from .export import build_xlsx
 from .flow import Bot
-from .sheets import from_env as sheet_from_env
+from .sheets import pool_from_env
 from .whatsapp import make_router, owner_for
 from .telegram import MENU as TG_MENU
 from .telegram import (Poller, TelegramAdapter, TelegramAPI, make_router as tg_router, owner_for_chat,
@@ -111,12 +111,13 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
         except BillError as e:
             return {"reply": str(e), "buttons": []}
 
-    # Sheet mirror for the shopkeeper's Telegram chat (or WhatsApp number); off by default.
-    mirror = sheet_from_env(ledger, sheet_owner(wa_app_secret))
-    app.state.mirror = mirror
-    if mirror:
-        mirror.boot()            # before any request: rebuild the ledger if the host wiped the disk
-        mirror.start()
+    # Google Sheets: each shop connects its own with /sheet <link>; KHATA_SHEET_ID is the default
+    # shop's sheet. Off without service account credentials.
+    sheets = pool_from_env(ledger, sheet_owner(wa_app_secret))
+    app.state.sheets = sheets
+    if sheets:
+        sheets.boot()            # before any request: rebuild each shop's ledger if the host wiped the disk
+        sheets.start()
 
     app.include_router(make_router(bot, voice, wa_client, verify_token=wa_verify_token,
                                    app_secret=wa_app_secret, on_image=on_image))
@@ -127,7 +128,7 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
     if telegram_api is not None or token:
         tg_api = telegram_api or TelegramAPI(token)
         tg_adapter = TelegramAdapter(
-            bot, voice, tg_api, on_image=on_image, export=lambda o: build_xlsx(ledger, o),
+            bot, voice, tg_api, on_image=on_image, export=lambda o: build_xlsx(ledger, o), sheets=sheets,
             salt=os.environ.get("KHATA_OWNER_SALT", ""),
             allowed=parse_allowed(os.environ.get("TELEGRAM_ALLOWED_CHAT_IDS")))
         mode = os.environ.get("TELEGRAM_MODE", "polling").strip().lower()
@@ -154,9 +155,7 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
 
     @app.get("/health")
     def health():
-        sheet = ({"sheet": "paused: restore failed" if mirror.paused else "on",
-                  "sheet_pending": mirror.pending(), "sheet_boot": mirror.boot_result}
-                 if mirror else {"sheet": "off"})
+        sheet = sheets.status() if sheets else {"sheet": "off"}
         tg = tg_state.get("mode", "off")
         if tg_state.get("error"):
             tg += f" (startup failed: {tg_state['error']})"
@@ -263,9 +262,10 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
                       "WhatsApp Cloud API" if wa_on else "off: web chat only"),
              "alive": bool(tg_adapter) or wa_on, "swap": "TELEGRAM_BOT_TOKEN (or WA_TOKEN)"},
             {"part": "Memory copy", "organ": "spine",
-             "impl": ("Google Sheet mirror (paused: restore failed)" if mirror and mirror.paused
-                      else "Google Sheet mirror + restore" if mirror else "off: .xlsx export"),
-             "alive": bool(mirror) and not mirror.paused, "swap": "KHATA_SHEET_ID"},
+             "impl": (f"Google Sheets, one per shop ({len(sheets.mirrors)} connected)" if sheets
+                      else "off: .xlsx export"),
+             "alive": bool(sheets) and any(not m.paused for m in sheets.mirrors.values()),
+             "swap": "/sheet <link>, KHATA_SHEET_ID"},
             {"part": "Fuse box", "organ": "fuse", "impl": f"{guard.status()['budget_left']} AI calls left" if live
              else "demo mode", "alive": live, "swap": "KHATA_BUDGET_CALLS, KHATA_KILL"},
         ]

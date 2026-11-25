@@ -41,7 +41,8 @@ BUTTON_TITLES = {"yes": "✅ Yes / हाँ", "no": "❌ No / नहीं",
                  "exp:Udhaar": "🤝 Udhaar", "exp:Bills": "🧾 Bills", "exp:Entries": "📒 Entries",
                  "exp:Dues": "📊 Dues", "exp:Rates": "🏷️ Rates", "exp:Customers": "👥 Customers",
                  "exp:all": "📚 All tables", "fmt:pdf": "📄 PDF", "fmt:xlsx": "📊 Excel",
-                 "dir:in": "📥 Came in / आए", "dir:out": "📤 Went out / गए", "today": "📅 Dated today"}
+                 "dir:in": "📥 Came in / आए", "dir:out": "📤 Went out / गए", "today": "📅 Dated today",
+                 "reset:yes": "🗑️ Yes, clear it / हाँ, मिटाओ", "reset:no": "↩️ No, keep it / नहीं"}
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ERROR_REPLY = "Something went wrong. Nothing was saved. Please try again."
 PRIVATE_ONLY = "Please message me privately. Khata only works in a one-to-one chat."
@@ -57,7 +58,8 @@ MENU = [("bill", "Make a bill / बिल बनाओ"), ("dues", "Udhaar balan
         ("rates", "Your item rates / रेट लिस्ट"), ("today", "Today's expenses / आज का खर्च"),
         ("expenses", "This month's expenses / महीने का खर्च"), ("remind", "Reminder links / तगादा"),
         ("undo", "Undo last entry / पिछली एंट्री हटाओ"), ("export", "Excel file / एक्सेल"),
-        ("invite", "Add another phone to this shop"), ("help", "How to use / मदद"), ("id", "Your chat id")]
+        ("sheet", "Connect your Google Sheet / शीट जोड़ो"), ("invite", "Add another phone to this shop"),
+        ("reset", "Start a fresh khata / नया खाता"), ("help", "How to use / मदद"), ("id", "Your chat id")]
 
 log = logging.getLogger("khata.telegram")
 
@@ -226,11 +228,12 @@ class TelegramAdapter:
     """
 
     def __init__(self, bot, voice, api, *, on_image: Callable | None,
-                 export: Callable[[str], bytes] | None, salt: str,
+                 export: Callable[[str], bytes] | None, salt: str, sheets=None,
                  allowed: frozenset[int] = frozenset(), clock=time.monotonic,
                  image_limit: int = bills.MAX_IMAGE):
         self.bot, self.voice, self.api = bot, voice, api
         self.on_image, self.export = on_image, export
+        self.sheets = sheets                     # SheetPool, or None when Google Sheets is off
         self._salt = salt
         self.allowed = frozenset(allowed)
         self.clock = clock
@@ -280,6 +283,8 @@ class TelegramAdapter:
             shop = hit[0]
             if shop == own:
                 return {"reply": "This phone is already the main phone of this shop."}
+            if self.sheets and self.sheets.get(own):
+                self.sheets.disconnect(own)       # its records move into the shop's sheet from now on
             moved = ledger.link(own, shop)
             return {"reply": f"✅ This phone is now linked to the shop. {moved} earlier record(s) were moved into the "
                              "shop's khata. Send /leave to unlink."}
@@ -287,6 +292,78 @@ class TelegramAdapter:
             return {"reply": "Unlinked. This phone has its own khata again." if ledger.unlink(own)
                     else "This phone is not linked to another shop."}
         return None
+
+    # ---- each shop's own Google Sheet ---------------------------------------------------
+    def _is_main(self, chat_id: int, owner: str) -> bool:
+        return owner_for_chat(chat_id, self._salt) == owner
+
+    def _sheet_command(self, chat_id: int, owner: str, text: str) -> dict:
+        """/sheet: status and how to connect. /sheet <link>: connect. /sheet off: disconnect."""
+        from .sheets import SheetError, sheet_id_of
+        pool = self.sheets
+        if pool is None:
+            return {"reply": "Google Sheets is not set up on this server. /export still gives you an Excel file."}
+        arg = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) > 1 else ""
+        how = (f"1. Make a new Google Sheet (sheets.new).\n"
+               f"2. Share it with {pool.email} as Editor.\n"
+               f"3. Send /sheet and the sheet's link here.")
+        if not arg:
+            link = pool.link(owner)
+            if link:
+                m = pool.get(owner)
+                state = " (paused: could not read it, try /sheet <link> again)" if m and m.paused else ""
+                return {"reply": f"📗 Your khata is kept in this sheet{state}:\n{link}\n\n"
+                                 "To move to a new sheet:\n" + how + "\nSend /sheet off to stop using a sheet."}
+            return {"reply": "📗 Keep your khata in your own Google Sheet (you can edit it there too):\n" + how}
+        if not self._is_main(chat_id, owner):
+            return {"reply": "Only the shop's main phone can change the sheet."}
+        if arg.lower() in ("off", "stop", "band"):
+            if not pool.disconnect(owner):
+                return {"reply": "No sheet is connected."}
+            return {"reply": "Sheet disconnected. It is left as it is, and new entries are no longer written to it.\n"
+                             "⚠️ This free server forgets data when it restarts. Connect a sheet again with /sheet <link> "
+                             "to keep your khata safe."}
+        sid = sheet_id_of(arg)
+        if not sid:
+            return {"reply": "That doesn't look like a Google Sheet link. It should look like "
+                             "https://docs.google.com/spreadsheets/d/..."}
+        if sid == pool.sheet_ids.get(owner):
+            return {"reply": "That sheet is already connected."}
+        try:
+            r = pool.connect(owner, sid)
+        except SheetError as e:
+            why = {"no access": f"I can't open that sheet. Share it with {pool.email} as Editor, then send the link again.",
+                   "read only": f"I can read that sheet but can't write to it. Share it with {pool.email} as Editor "
+                                "(not Viewer), then send the link again.",
+                   "both have data": "That sheet already has a khata in it, and so does this chat. I won't mix them.\n"
+                                     "Use an empty sheet, or send /reset first to start fresh from that sheet.",
+                   }.get(str(e), "Google Sheets didn't answer. Please try again in a minute.")
+            return {"reply": why}
+        n = r.get("restored", 0)
+        got = f" I read {n} record(s) from it into your khata." if n else " Your khata is in it now."
+        return {"reply": f"✅ Sheet connected.{got}\nYou can edit Udhaar, Entries, Rates and Customers right in the sheet.\n"
+                         f"{pool.link(owner)}"}
+
+    def _reset_command(self, chat_id: int, owner: str) -> dict:
+        if not self._is_main(chat_id, owner):
+            return {"reply": "Only the shop's main phone can clear the khata. Send /leave to unlink this phone."}
+        sheet = (" Your Google Sheet will be disconnected and left as it is, as a backup."
+                 if self.sheets and self.sheets.get(owner) else "")
+        return {"reply": "⚠️ This deletes every udhaar, entry, bill, rate and customer in this khata. It can't be undone."
+                         f"{sheet}\nStart fresh?", "buttons": ["reset:yes", "reset:no"]}
+
+    def _reset_confirm(self, chat_id: int, owner: str, yes: bool) -> dict:
+        if not yes:
+            return {"reply": "Okay, nothing was deleted."}
+        if not self._is_main(chat_id, owner):
+            return {"reply": "Only the shop's main phone can clear the khata."}
+        had_sheet = bool(self.sheets and self.sheets.disconnect(owner))   # first, so the sheet is never blanked
+        self.bot.ledger.delete_owner_data(owner)
+        for d in (self.bot.pending, self.bot.drafts, self.bot.export_choice, self.bot.waiting_mode):
+            d.pop(owner, None)
+        old = " Your old sheet was disconnected and kept as it is." if had_sheet else ""
+        nxt = " Send /sheet to connect a new Google Sheet." if self.sheets else ""
+        return {"reply": f"🗑️ Khata cleared. You're starting fresh.{old}{nxt}"}
 
     def _admit(self, chat: dict) -> bool:
         chat_id = chat["id"]
@@ -321,10 +398,13 @@ class TelegramAdapter:
                     r = self._link_command(chat_id, cmd, text)
                     if r:
                         return self._send(chat_id, owner, r)
+                if cmd == "sheet":
+                    return self._send(chat_id, owner, self._sheet_command(chat_id, owner, text))
+                if cmd == "reset":
+                    return self._send(chat_id, owner, self._reset_command(chat_id, owner))
                 if cmd == "id":
                     return self._send(chat_id, owner, {"reply": (
-                        f"Your chat id is {chat_id}. Put it in KHATA_SHEET_OWNER_TELEGRAM_ID "
-                        "to link the Google Sheet.")})
+                        f"Your chat id is {chat_id}. To keep your khata in a Google Sheet, send /sheet.")})
                 if cmd in COMMANDS:
                     return self._send(chat_id, owner,
                                       self.bot.handle(owner, COMMANDS[cmd], source="telegram"))
@@ -392,6 +472,8 @@ class TelegramAdapter:
             del self.keyboards[chat_id]
             owner = self._owner(chat_id)
             data = str(cq.get("data", ""))[:64]
+            if data in ("reset:yes", "reset:no"):
+                return self._send(chat_id, owner, self._reset_confirm(chat_id, owner, data == "reset:yes"))
             self._send(chat_id, owner, self.bot.handle(owner, data, source="telegram"))
         except Exception as ex:
             log.warning("telegram callback failed: %s", type(ex).__name__)

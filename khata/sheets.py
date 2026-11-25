@@ -171,6 +171,9 @@ class SheetMirror:
         self._imported: dict[str, str] = {}     # fingerprint of a typed row -> Ref it created
         self._legacy_done = False
         self.last_import: dict = {}
+        self.remap: dict[str, str] = {}         # Ref in the sheet -> new Ref, when restore had to renumber
+        self.stopped = False                    # disconnected: never write to this sheet again
+        self._sync_lock = threading.Lock()
 
     # ---- boot and restore --------------------------------------------------------------
     def boot(self, attempts: int = 2, wait: float = 3.0) -> dict:
@@ -188,11 +191,15 @@ class SheetMirror:
         self.paused = True
         return self.boot_result
 
-    def restore(self) -> dict:
+    def has_data(self) -> bool:
+        """Does this shop already have records in the database? (Other shops don't count.)"""
         with self.ledger.lock:
-            if (self.ledger.db.execute("SELECT 1 FROM entries LIMIT 1").fetchone()
-                    or self.ledger.db.execute("SELECT 1 FROM expenses LIMIT 1").fetchone()):
-                return {"restored": 0, "skipped": 0, "reason": "database not empty"}
+            return any(self.ledger.db.execute(f"SELECT 1 FROM {t} WHERE owner=? LIMIT 1", (self.owner,)).fetchone()
+                       for t in ("entries", "expenses", "bills"))
+
+    def restore(self) -> dict:
+        if self.has_data():
+            return {"restored": 0, "skipped": 0, "reason": "database not empty"}
         udhaar, entries = self.client.read_tab(render.UDHAAR_TAB), self.client.read_tab(render.ENTRIES_TAB)
         if udhaar or entries:
             r = self._restore_split(udhaar, entries, self.client.read_tab(render.BILLS_TAB))
@@ -248,11 +255,13 @@ class SheetMirror:
                     b = render.parse_bill(row)
                     if not DATE.fullmatch(b["date"]) or b["id"] <= 0 or b["total"] <= 0:
                         raise ValueError(row)
-                    self.ledger.db.execute(
-                        "INSERT INTO bills(id,owner,customer,items,total,payment,bill_date,created_at) "
-                        "VALUES(?,?,?,?,?,?,?,?)",
-                        (b["id"], self.owner, b["customer"], json.dumps(b["items"], ensure_ascii=False), b["total"],
-                         b["payment"], b["date"], b["date"] + "T00:00:00+00:00"))
+                    vals = (self.owner, b["customer"], json.dumps(b["items"], ensure_ascii=False), b["total"],
+                            b["payment"], b["date"], b["date"] + "T00:00:00+00:00")
+                    cols = "owner,customer,items,total,payment,bill_date,created_at"
+                    try:
+                        self.ledger.db.execute(f"INSERT INTO bills(id,{cols}) VALUES(?,?,?,?,?,?,?,?)", (b["id"], *vals))
+                    except sqlite3.IntegrityError:    # number taken by another shop: keep the bill, new number
+                        self.ledger.db.execute(f"INSERT INTO bills({cols}) VALUES(?,?,?,?,?,?,?)", vals)
                     restored += 1
                 except (ValueError, TypeError, IndexError, KeyError, sqlite3.IntegrityError):
                     skipped += 1
@@ -284,20 +293,25 @@ class SheetMirror:
             raise ValueError(d)
         created = (d["recorded"] if DATE.fullmatch(d.get("recorded") or "") else d["date"]) + "T00:00:00+00:00"
         if d["kind"] == "expense":
-            self.ledger.db.execute(
-                "INSERT INTO expenses(id,owner,category,paise,note,vendor,entry_date,status,source,created_at,"
-                "direction) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (d["id"], self.owner, (d["category"] or "other")[:40], d["paise"], d["note"][:200],
-                 d["name"][:60], d["date"], d["status"], d["via"], created, d.get("direction", "out")))
-            return
-        if not d["name"]:
-            raise ValueError(d)
-        cid = self.ledger.get_or_create_customer(self.owner, d["name"])
-        self.ledger.db.execute(
-            "INSERT INTO entries(id,owner,customer_id,kind,paise,note,entry_date,due_date,status,source,created_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (d["id"], self.owner, cid, d["kind"], d["paise"], d["note"][:200], d["date"], d["due"], d["status"],
-             d["via"], created))
+            table, prefix, cols = "expenses", "E-", "owner,category,paise,note,vendor,entry_date,status,source,created_at,direction"
+            vals = (self.owner, (d["category"] or "other")[:40], d["paise"], d["note"][:200],
+                    d["name"][:60], d["date"], d["status"], d["via"], created, d.get("direction", "out"))
+        else:
+            if not d["name"]:
+                raise ValueError(d)
+            cid = self.ledger.get_or_create_customer(self.owner, d["name"])
+            table, prefix, cols = "entries", "K-", "owner,customer_id,kind,paise,note,entry_date,due_date,status,source,created_at"
+            vals = (self.owner, cid, d["kind"], d["paise"], d["note"][:200], d["date"], d["due"], d["status"],
+                    d["via"], created)
+        marks = ",".join("?" * len(vals))
+        try:
+            self.ledger.db.execute(f"INSERT INTO {table}(id,{cols}) VALUES(?,{marks})", (d["id"], *vals))
+        except sqlite3.IntegrityError:
+            # The Ref is already used by another shop (a sheet made on a different server). Keep the
+            # record under a new Ref, and remember the old one so the first sync doesn't see the
+            # sheet's row as new and add it twice.
+            new = self.ledger.db.execute(f"INSERT INTO {table}({cols}) VALUES({marks})", vals).lastrowid
+            self.remap[f"{prefix}{d['id']}"] = f"{prefix}{new}"
 
     # ---- two-way sync ----------------------------------------------------------------
     def _views(self) -> tuple[dict, str]:
@@ -314,7 +328,18 @@ class SheetMirror:
             return self.client.read_tabs(render.TABS)
         return {t: self.client.read_tab(t) for t in render.TABS}
 
+    def stop(self) -> None:
+        """Disconnect. Waits for a sync in progress, so nothing is written after this returns."""
+        with self._sync_lock:
+            self.stopped = True
+
     def sync(self) -> dict:
+        with self._sync_lock:
+            if self.stopped:
+                return {"synced": 0, "failed": 0, "pending": 0, "stopped": True}
+            return self._sync()
+
+    def _sync(self) -> dict:
         if self.paused:
             return {"synced": 0, "failed": 0, "pending": self.pending(), "paused": True}
         now = self.clock()
@@ -347,6 +372,7 @@ class SheetMirror:
             return {"synced": 0, "failed": 1, "pending": 1}
         self._snapshot(tabs)
         self._imported.clear()
+        self.remap.clear()                                   # the sheet now shows the new Refs
         self._written, self._fails, self._next_at = fp, 0, 0.0
         n = sum(len(tabs[t]) - 1 for t in (render.UDHAAR_TAB, render.ENTRIES_TAB)) if wrote else 0
         return {"synced": n, "failed": 0, "pending": 0, **({"imported": self.last_import} if any(
@@ -422,6 +448,7 @@ class SheetMirror:
                 if not any(str(v).strip() for v in d.values()):
                     continue
                 key = self._key(tab, d)
+                key = self.remap.get(key, key)
                 if key and key in last:
                     seen.add(key)
                     if self._cells(tab, d) != last[key]:
@@ -551,6 +578,211 @@ class SheetMirror:
         t = threading.Thread(target=loop, daemon=True, name="sheet-mirror")
         t.start()
         return t
+
+
+SHEET_ID = re.compile(r"/spreadsheets/d/([A-Za-z0-9_-]{20,})|^([A-Za-z0-9_-]{30,})$")
+REGISTRY_TAB = "Shops"
+REGISTRY_HEAD = ["Shop", "Sheet ID", "Updated"]
+OFF = "off"
+
+
+def sheet_id_of(text: str) -> str | None:
+    """A Google Sheet link (or bare id) -> its id."""
+    m = SHEET_ID.search(str(text or "").strip())
+    return (m.group(1) or m.group(2)) if m else None
+
+
+class SheetRegistry:
+    """Which shop uses which sheet. Kept in the database and, because free hosting wipes the
+    disk, in a "Shops" tab of the operator's admin sheet. "off" means the shop disconnected."""
+
+    def __init__(self, ledger: Ledger, client: SheetClient | None = None):
+        self.ledger, self.client = ledger, client
+        with ledger.lock:
+            ledger.db.execute("CREATE TABLE IF NOT EXISTS shop_sheets(owner TEXT PRIMARY KEY, sheet_id TEXT NOT NULL, "
+                              "updated_at TEXT NOT NULL)")
+            ledger.db.commit()
+
+    def load(self) -> dict[str, str]:
+        with self.ledger.lock:
+            out = {r["owner"]: r["sheet_id"] for r in self.ledger.db.execute("SELECT owner, sheet_id FROM shop_sheets")}
+        if self.client:
+            for row in self.client.read_tab(REGISTRY_TAB)[1:]:
+                if len(row) > 1 and str(row[0]).strip() and str(row[1]).strip():
+                    out[str(row[0]).strip()] = str(row[1]).strip()
+        return out
+
+    def save(self, owner: str, sheet_id: str) -> None:
+        now = time.strftime("%Y-%m-%d %H:%M")
+        with self.ledger.lock:
+            self.ledger.db.execute("INSERT OR REPLACE INTO shop_sheets(owner, sheet_id, updated_at) VALUES(?,?,?)",
+                                   (owner, sheet_id, now))
+            self.ledger.db.commit()
+        if self.client:
+            rows = self.client.read_tab(REGISTRY_TAB)
+            keep = [r for r in rows[1:] if r and str(r[0]).strip() and str(r[0]).strip() != owner]
+            self.client.write_tab(REGISTRY_TAB, [REGISTRY_HEAD] + keep + [[owner, sheet_id, now]])
+
+
+class SheetError(Exception):
+    """Why a sheet could not be connected; the message is shown to the shopkeeper."""
+
+
+class SheetPool:
+    """One SheetMirror per shop. Each shopkeeper connects their own sheet with /sheet <link>.
+
+    One thread serves every mirror: right after a change it redraws only the sheets that are
+    behind, and every `every` seconds it reads all of them for the shopkeepers' edits."""
+
+    def __init__(self, ledger: Ledger, make_client, registry: SheetRegistry, email: str = "", clock=time.time):
+        self.ledger, self.make_client, self.registry, self.email, self.clock = ledger, make_client, registry, email, clock
+        self.mirrors: dict[str, SheetMirror] = {}
+        self.sheet_ids: dict[str, str] = {}
+        self.boot_results: dict[str, dict] = {}
+        self.registry_error: str | None = None
+        self.defaults: dict[str, str] = {}      # shop -> sheet from env, used unless the registry says otherwise
+        self.lock = threading.Lock()
+        self._wake = threading.Event()
+
+    def get(self, owner: str) -> SheetMirror | None:
+        return self.mirrors.get(owner)
+
+    def boot(self, defaults: dict[str, str] | None = None) -> dict:
+        """Before serving requests: reconnect every shop and restore those the host wiped."""
+        shops = dict(self.defaults if defaults is None else defaults)
+        try:
+            shops.update(self.registry.load())
+        except Exception as ex:          # the admin sheet is down: env default still works
+            self.registry_error = type(ex).__name__
+        for owner, sid in shops.items():
+            if sid == OFF:
+                continue
+            try:
+                m = SheetMirror(self.ledger, self.make_client(sid), owner, self.clock)
+            except Exception as ex:
+                self.boot_results[owner] = {"error": type(ex).__name__}
+                continue
+            self.boot_results[owner] = m.boot()
+            with self.lock:
+                self.mirrors[owner], self.sheet_ids[owner] = m, sid
+        return self.boot_results
+
+    @staticmethod
+    def _sheet_has_khata(sheet: dict) -> bool:
+        return any(len(sheet.get(t) or []) > 1 for t in (render.UDHAAR_TAB, render.ENTRIES_TAB, render.BILLS_TAB,
+                                                           "Transactions", "Khata"))
+
+    def connect(self, owner: str, sheet_id: str) -> dict:
+        """Point a shop at a sheet. Returns {"restored": n} or raises SheetError."""
+        try:
+            client = self.make_client(sheet_id)
+            tabs = list(render.TABS) + ["Transactions", "Khata"]
+            sheet = client.read_tabs(tabs) if hasattr(client, "read_tabs") else {t: client.read_tab(t) for t in tabs}
+        except Exception as ex:
+            code = getattr(getattr(ex, "response", None), "status_code", None)
+            if code in (403, 404):
+                raise SheetError("no access") from None
+            raise SheetError("unreachable") from None
+        m = SheetMirror(self.ledger, client, owner, self.clock)
+        if self._sheet_has_khata(sheet) and m.has_data():
+            # Two different khatas: importing would mix them, redrawing would erase the sheet's one.
+            raise SheetError("both have data")
+        result = m.boot(attempts=1)
+        if m.paused:
+            raise SheetError("unreachable")
+        if m.sync().get("failed"):      # readable is not enough (public sheets are): it must take our writes
+            raise SheetError("read only")
+        with self.lock:
+            old = self.mirrors.pop(owner, None)
+            if old:
+                old.stop()
+            self.mirrors[owner], self.sheet_ids[owner] = m, sheet_id
+        self._save(owner, sheet_id)
+        self.poke()
+        return result
+
+    def disconnect(self, owner: str) -> bool:
+        """Stop writing to the shop's sheet. The sheet itself is left as it is."""
+        with self.lock:
+            m = self.mirrors.pop(owner, None)
+            self.sheet_ids.pop(owner, None)
+        if m:
+            m.stop()
+        self._save(owner, OFF)
+        return m is not None
+
+    def _save(self, owner: str, sid: str) -> None:
+        try:
+            self.registry.save(owner, sid)
+            self.registry_error = None
+        except Exception as ex:          # remembered locally; the admin sheet catches up next time
+            self.registry_error = type(ex).__name__
+
+    def link(self, owner: str) -> str | None:
+        sid = self.sheet_ids.get(owner)
+        return f"https://docs.google.com/spreadsheets/d/{sid}" if sid else None
+
+    def status(self) -> dict:
+        ms = list(self.mirrors.values())
+        out = {"sheet": "on" if ms else "off", "sheets": len(ms),
+               "sheet_paused": sum(m.paused for m in ms), "sheet_pending": sum(m.pending() for m in ms),
+               "sheet_boot": list(self.boot_results.values())}       # no shop ids: /health is public
+        if self.registry_error:
+            out["sheet_registry"] = f"error: {self.registry_error}"
+        return out
+
+    def poke(self) -> None:
+        self._wake.set()
+
+    def run_once(self, full: bool) -> None:
+        for m in list(self.mirrors.values()):
+            try:
+                if full or m.pending():
+                    m.sync()
+            except Exception:
+                pass
+
+    def start(self, every: float = 15.0) -> threading.Thread:
+        self.ledger.listeners.append(self.poke)
+        self._wake.set()
+
+        def loop():
+            last_full = 0.0
+            while True:
+                self._wake.wait(every)
+                self._wake.clear()
+                time.sleep(0.3)                     # let a burst of changes settle
+                full = time.monotonic() - last_full >= every
+                self.run_once(full)
+                if full:
+                    last_full = time.monotonic()
+        t = threading.Thread(target=loop, daemon=True, name="sheet-pool")
+        t.start()
+        return t
+
+
+def _creds() -> tuple[dict | None, str | None]:
+    info = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    return (json.loads(info) if info else None), os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+
+
+def pool_from_env(ledger: Ledger, default_owner: str | None) -> SheetPool | None:
+    """Needs service account credentials. KHATA_SHEET_ID (with the owner's chat id) is the
+    default shop's sheet; KHATA_REGISTRY_SHEET_ID (default: the same sheet) keeps the Shops tab."""
+    info, path = _creds()
+    if not (info or path):
+        return None
+    if info is None:
+        with open(path) as f:
+            email = json.load(f).get("client_email", "")
+    else:
+        email = info.get("client_email", "")
+    make = lambda sid: GoogleSheetClient(sid, path, info=info)  # noqa: E731
+    reg_id = os.environ.get("KHATA_REGISTRY_SHEET_ID") or os.environ.get("KHATA_SHEET_ID")
+    pool = SheetPool(ledger, make, SheetRegistry(ledger, make(reg_id) if reg_id else None), email)
+    sid = os.environ.get("KHATA_SHEET_ID")
+    pool.defaults = {default_owner: sid} if (sid and default_owner) else {}
+    return pool
 
 
 def from_env(ledger: Ledger, owner: str | None) -> SheetMirror | None:

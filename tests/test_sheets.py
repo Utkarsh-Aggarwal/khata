@@ -267,8 +267,10 @@ def test_failed_restore_pauses_so_an_empty_db_never_overwrites_the_sheet():
 def test_nonempty_db_is_not_restored_over():
     sh = FakeSheet()
     lg = Ledger()
-    lg.add_entry("demo-x", "A", "credit", 1)
+    lg.add_entry("shop", "A", "credit", 1)
     assert SheetMirror(lg, sh, "shop", Clock()).boot()["reason"] == "database not empty"
+    # another shop's records don't count: each shop restores from its own sheet
+    assert SheetMirror(lg, sh, "other-shop", Clock()).boot()["reason"] == "new sheet"
 
 
 def test_entry_ids_never_reused_after_delete():

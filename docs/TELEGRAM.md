@@ -11,8 +11,8 @@ Telegram is the shopkeeper's chat channel. Locally the app **polls** Telegram, s
    KHATA_OWNER_SALT=<run: openssl rand -hex 16>
    ```
 3. Start: `.venv/bin/uvicorn khata.app:app --env-file .env --port 8765`. `/health` shows `"telegram": "polling"`.
-4. Open your bot, press **Start**, and send `/id`. Put the number it replies with in `.env` as
-   `KHATA_SHEET_OWNER_TELEGRAM_ID=<number>` and restart. Your ledger is now mirrored to the Google Sheet (docs/SHEETS.md).
+4. Open your bot, press **Start**, and send `/sheet`. It tells you which email to share a new Google Sheet with;
+   then send `/sheet <link>`. Every shopkeeper connects their own sheet this way (docs/SHEETS.md).
 
 ## Test from your phone
 | Send | Expect |

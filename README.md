@@ -30,7 +30,9 @@ Nothing is ever saved without a confirm tap.
 
 `/dues` (who owes you and whom you owe) · `/today` · `/expenses` · `/rates` · `/remind` (drafted
 WhatsApp reminders for customers) · `/export` (any table as PDF or Excel) · `/undo` · `/invite` and
-`/join` (several phones, one shop) · `/help`
+`/join` (several phones, one shop) · `/sheet <link>` (keep the khata in your own Google Sheet; send a
+new link to move, `/sheet off` to stop) · `/reset` (start fresh after a confirm tap; the old sheet is kept)
+· `/help`
 
 ## The Google Sheet is two-way
 
