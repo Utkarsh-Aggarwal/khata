@@ -383,6 +383,61 @@ class Ledger:
             self.db.commit()
             return cur.lastrowid
 
+    # ---- edits made in the Google Sheet ---------------------------
+    def update_entry(self, owner: str, entry_id: int, *, kind: str, name: str, paise: int, entry_date: str,
+                     due_date: str | None, note: str) -> bool:
+        if kind not in ("credit", "payment") or not isinstance(paise, int) or paise <= 0:
+            raise LedgerError("bad entry")
+        with self.lock:
+            cid = self.get_or_create_customer(owner, name)
+            n = self.db.execute("UPDATE entries SET kind=?, customer_id=?, paise=?, entry_date=?, due_date=?, note=? "
+                                "WHERE owner=? AND id=? AND status='active'",
+                                (kind, cid, paise, entry_date, due_date, note[:200], owner, entry_id)).rowcount
+            self._commit()
+            return bool(n)
+
+    def update_expense(self, owner: str, expense_id: int, *, category: str, direction: str, vendor: str,
+                       paise: int, entry_date: str, note: str) -> bool:
+        if direction not in ("in", "out") or not isinstance(paise, int) or paise <= 0:
+            raise LedgerError("bad entry")
+        with self.lock:
+            n = self.db.execute("UPDATE expenses SET category=?, direction=?, vendor=?, paise=?, entry_date=?, note=? "
+                                "WHERE owner=? AND id=? AND status='active'",
+                                (category[:40] or "other", direction, vendor[:60], paise, entry_date, note[:200],
+                                 owner, expense_id)).rowcount
+            self._commit()
+            return bool(n)
+
+    def cancel(self, owner: str, ref: str) -> bool:
+        """Cancel 'K-12' (udhaar entry) or 'E-5' (ledger entry). Rows are kept, marked cancelled."""
+        table = {"K": "entries", "E": "expenses"}.get(ref[:1].upper())
+        if not table or not ref[2:].isdigit():
+            return False
+        with self.lock:
+            n = self.db.execute(f"UPDATE {table} SET status='cancelled' WHERE owner=? AND id=? AND status='active'",
+                                (owner, int(ref[2:]))).rowcount
+            self._commit()
+            return bool(n)
+
+    def delete_price(self, owner: str, name: str) -> None:
+        with self.lock:
+            self.db.execute("DELETE FROM prices WHERE owner=? AND key=?", (owner, name_key(name)))
+            self.db.commit()
+
+    def customers(self, owner: str) -> list[tuple[str, str | None]]:
+        with self.lock:
+            return [(r["name"], r["phone"]) for r in
+                    self.db.execute("SELECT name, phone FROM customers WHERE owner=? ORDER BY name", (owner,))]
+
+    def links_of(self, shop: str) -> list[str]:
+        return self.members(shop)
+
+    def restore_link(self, member: str, shop: str) -> None:
+        with self.lock:
+            self.db.execute("INSERT OR IGNORE INTO links(member,shop,created_at) VALUES(?,?,?)",
+                            (member, shop, datetime.now(timezone.utc).isoformat()))
+            self.db.commit()
+
     # ---- several phones, one shop ------------------------------------
     def shop_of(self, member: str) -> str:
         """The khata this chat writes to: its linked shop, else its own."""

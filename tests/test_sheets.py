@@ -126,7 +126,7 @@ def test_old_tabs_are_removed_after_the_new_ones_are_written():
     sh.tabs["Khata"], sh.tabs["Summary"], sh.tabs["Transactions"] = [["old"]], [["old"]], [["old"]]
     lg.add_entry("o", "A", "credit", 100)
     SheetMirror(lg, sh, "o", Clock()).sync()
-    assert set(sh.tabs) == {"Udhaar", "Bills", "Entries", "Dues"}
+    assert set(sh.tabs) == {"Udhaar", "Bills", "Entries", "Dues", "Rates", "Customers", "Settings"}
 
 def test_redraw_only_when_something_changed():
     lg, sh = Ledger(), FakeSheet()
@@ -139,17 +139,16 @@ def test_redraw_only_when_something_changed():
     assert m.pending() == 1 and m.sync()["synced"] == 2
 
 
-def test_hand_edits_are_overwritten_by_the_database():
+def test_junk_typed_in_the_sheet_is_kept_with_a_warning():
     lg, sh = Ledger(), FakeSheet()
     m = SheetMirror(lg, sh, "o", Clock())
     lg.add_entry("o", "A", "credit", 100)
     m.sync()
-    sh.tabs["Udhaar"].append(["junk", "typed by hand"])
-    lg.add_entry("o", "A", "credit", 100)
+    sh.tabs["Udhaar"].append(["", "typed by hand"])
     m.sync()
-    assert all(r["Ref"] != "junk" for r in sh.khata())
-
-
+    junk = [r for r in sh.khata() if r["Date"] == "typed by hand"]
+    assert len(junk) == 1 and junk[0]["Note"].startswith("⚠️ Not saved:")
+    assert len(lg.entries("o")) == 1
 def test_outage_is_retried_with_backoff():
     lg, sh, clk = Ledger(), FakeSheet(), Clock()
     m = SheetMirror(lg, sh, "o", clk)

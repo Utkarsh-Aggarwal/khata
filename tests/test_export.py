@@ -121,4 +121,4 @@ def test_api_export_serves_build_xlsx_for_demo_login():
     assert list(rows[0]) == HEADER
     assert sorted(row[0] for row in rows[1:]) == sorted(f"K-{e.id}" for e in entries if e.status == "active")
     assert "Stranger" not in {row[3] for row in rows[1:]}
-    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Udhaar", "Bills", "Entries", "Dues"]
+    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Udhaar", "Bills", "Entries", "Dues", "Rates", "Customers"]

@@ -206,7 +206,7 @@ def test_export_matches_sheet_layout_with_expenses_inline():
     lg.add_entry("o", "Ramesh", "credit", 50000)
     lg.add_expense("o", "electricity", 90050, note="meter 2", vendor="PSPCL")
     wb = load_workbook(io.BytesIO(build_xlsx(lg, "o")))
-    assert wb.sheetnames == ["Udhaar", "Bills", "Entries", "Dues"]
+    assert wb.sheetnames == ["Udhaar", "Bills", "Entries", "Dues", "Rates", "Customers"]
     rows = [dict(zip(render.ENTRY_COLUMNS, r)) for r in list(wb["Entries"].iter_rows(values_only=True))[1:]]
     x = next(r for r in rows if r["Type"].startswith("Expense"))
     assert (x["Name"], x["Type"], x["Amount (₹)"], x["Note"]) == ("PSPCL", "Expense (Electricity)", 900.5, "meter 2")

@@ -24,6 +24,10 @@
 ## Free services only
 - AI providers default to Groq's free tier: `whisper-large-v3` for voice, `qwen/qwen3.8-27b`
   for bills. Both sit behind `PaidGuard` (budget + kill switch) and fall back to demo mode.
+- The Google Sheet is two-way: the shopkeeper may only have the sheet. Udhaar, Entries, Rates and
+  Customers are editable (edit a cell, delete a row to cancel, type a new row to add); Bills and Dues
+  are calculated. Edits are compared with what the bot last wrote, never with an older sheet. Rows
+  that can't be read stay in the sheet with "⚠️ Not saved: <reason>"; nothing typed is dropped.
 - Hosting is Render's free plan. Its disk is wiped on restart, so the shopkeeper ledger is
   rebuilt from the Google Sheet on boot (`SheetMirror.boot`). If restore fails, syncing pauses.
 

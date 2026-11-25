@@ -11,7 +11,8 @@ from .ledger import Ledger
 
 HEADER = render.UDHAAR_COLUMNS
 WIDTHS = {render.UDHAAR_TAB: [7, 11, 18, 24, 11, 11, 11, 30, 12], render.BILLS_TAB: [8, 11, 22, 60, 11, 10],
-          render.ENTRIES_TAB: [7, 11, 24, 26, 11, 11, 30, 12], render.DUES_TAB: [24, 16, 20]}
+          render.ENTRIES_TAB: [7, 11, 24, 26, 11, 11, 30, 12], render.DUES_TAB: [24, 16, 20],
+          render.RATES_TAB: [24, 10, 8, 30], render.CUSTOMERS_TAB: [24, 18, 30], render.SETTINGS_TAB: [16, 32, 30]}
 
 
 def build_xlsx(ledger: Ledger, owner: str) -> bytes:
@@ -23,6 +24,8 @@ def build_xlsx(ledger: Ledger, owner: str) -> bytes:
     wb.remove(wb.active)
     bold, head = Font(bold=True), PatternFill("solid", fgColor="F3E7C9")
     for name, rows in render.all_tabs(ledger, owner).items():
+        if name == render.SETTINGS_TAB:            # internal (linked phone ids): not for the Excel file
+            continue
         ws = wb.create_sheet(name)
         for row in rows:
             ws.append(row)

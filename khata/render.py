@@ -16,7 +16,12 @@ from datetime import date
 from .ledger import Ledger
 
 UDHAAR_TAB, BILLS_TAB, ENTRIES_TAB, DUES_TAB = "Udhaar", "Bills", "Entries", "Dues"
-TABS = (UDHAAR_TAB, BILLS_TAB, ENTRIES_TAB, DUES_TAB)
+RATES_TAB, CUSTOMERS_TAB, SETTINGS_TAB = "Rates", "Customers", "Settings"
+TABS = (UDHAAR_TAB, BILLS_TAB, ENTRIES_TAB, DUES_TAB, RATES_TAB, CUSTOMERS_TAB, SETTINGS_TAB)
+EDITABLE = (UDHAAR_TAB, ENTRIES_TAB, RATES_TAB, CUSTOMERS_TAB)     # the shopkeeper may edit these
+RATE_COLUMNS = ["Item", "Rate (₹)", "Unit", "Note"]
+CUSTOMER_COLUMNS = ["Name", "WhatsApp number", "Note"]
+SETTINGS_COLUMNS = ["Setting", "Value", "Note"]
 UDHAAR_COLUMNS = ["Ref", "Date", "Type", "Name", "Amount (₹)", "Due", "Via", "Note", "Recorded on"]
 ENTRY_COLUMNS = ["Ref", "Date", "Type", "Name", "Amount (₹)", "Via", "Note", "Recorded on"]
 BILL_COLUMNS = ["Bill No", "Date", "Customer", "Items", "Total (₹)", "Payment"]
@@ -103,11 +108,125 @@ def dues_rows(ledger: Ledger, owner: str) -> list[list]:
     return [DUES_COLUMNS] + rows
 
 
+def rate_rows(ledger: Ledger, owner: str) -> list[list]:
+    return [[n, _rupees(r), u or "", ""] for n, r, u in ledger.prices(owner)]
+
+
+def customer_rows(ledger: Ledger, owner: str) -> list[list]:
+    return [[n, ("+" + ph) if ph else "", ""] for n, ph in ledger.customers(owner)]
+
+
+def settings_rows(ledger: Ledger, owner: str) -> list[list]:
+    return [["linked phone", m, "Added with /join. Do not edit."] for m in ledger.members(owner)]
+
+
 def all_tabs(ledger: Ledger, owner: str) -> dict[str, list[list]]:
     return {UDHAAR_TAB: [UDHAAR_COLUMNS] + udhaar_rows(ledger, owner),
             BILLS_TAB: [BILL_COLUMNS] + bill_rows(ledger, owner),
             ENTRIES_TAB: [ENTRY_COLUMNS] + entry_rows(ledger, owner),
-            DUES_TAB: dues_rows(ledger, owner)}
+            DUES_TAB: dues_rows(ledger, owner),
+            RATES_TAB: [RATE_COLUMNS] + rate_rows(ledger, owner),
+            CUSTOMERS_TAB: [CUSTOMER_COLUMNS] + customer_rows(ledger, owner),
+            SETTINGS_TAB: [SETTINGS_COLUMNS] + settings_rows(ledger, owner)}
+
+
+# ---- lenient reading of what a shopkeeper types into the sheet ------------------------
+WARN = "⚠️ Not saved: "
+UDHAAR_GIVEN_W = {"udhaar given", "given", "credit", "udhaar", "udhar", "diya", "gave", "lent", "उधार", "उधार दिया",
+                  "ਉਧਾਰ", "out"}
+PAYMENT_W = {"payment received", "payment", "paid", "received", "returned", "return", "wapas", "jama", "mila",
+             "जमा", "वापस", "ਜਮ੍ਹਾ", "in", "paid back"}
+MONEY_IN_W = {"money in", "in", "sale", "sales", "bikri", "income", "received", "बिक्री", "ਵਿਕਰੀ"}
+MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov",
+                                       "dec"], start=1)}
+
+
+def cell_date(v) -> str:
+    """ISO date from '2026-11-25', '25/11/2026', '25-11-26', '25 Nov 2026' or a sheet serial number."""
+    import re as _re
+    from datetime import timedelta
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and 20000 < v < 80000:
+        return (date(1899, 12, 30) + timedelta(days=int(v))).isoformat()
+    t = str(v).strip()
+    if _re.fullmatch(r"\d{4}-\d{2}-\d{2}", t):
+        return date.fromisoformat(t).isoformat()
+    m = _re.fullmatch(r"(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})", t)
+    if m:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if mo > 12 and d <= 12:                      # typed month-first
+            d, mo = mo, d
+        return date(y + 2000 if y < 100 else y, mo, d).isoformat()
+    m = _re.fullmatch(r"(\d{1,2})\s+([A-Za-z]{3})[a-z]*,?\s+(\d{4})", t)
+    if m and m.group(2).lower() in MONTHS:
+        return date(int(m.group(3)), MONTHS[m.group(2).lower()], int(m.group(1))).isoformat()
+    raise ValueError(f"date '{t}' is not a date (use 25/11/2026)")
+
+
+def cell_amount(v) -> int:
+    t = str(v).replace(",", "").replace("₹", "").replace("/-", "").strip()
+    try:
+        p = round(float(t) * 100)
+    except ValueError:
+        raise ValueError(f"amount '{v}' is not a number")
+    if not 0 < p <= 10**9:
+        raise ValueError(f"amount '{v}' must be more than 0 and at most ₹1 crore")
+    return p
+
+
+def clean_note(v) -> str:
+    """Drop our own '⚠️ Not saved: ... |' warning so it is never saved as the note."""
+    t = str(v or "").strip()
+    if t.startswith(WARN):
+        return t.split(" | ", 1)[1].strip() if " | " in t else ""
+    return t
+
+
+def udhaar_kind(v) -> str:
+    t = str(v).strip().lower()
+    if t in UDHAAR_GIVEN_W:
+        return "credit"
+    if t in PAYMENT_W:
+        return "payment"
+    raise ValueError(f"type '{v}' should be 'Udhaar given' or 'Payment received'")
+
+
+def entry_kind(v) -> tuple[str, str]:
+    """(direction, category) from 'Expense (Rent)', 'Money in (Sale)', 'rent', 'sale', 'expense'..."""
+    t = str(v).strip()
+    low = t.lower()
+    direction, cat = None, ""
+    for word, d in (("money in", "in"), ("expense", "out")):
+        if low.startswith(word):
+            direction = d
+            rest = t[len(word):].strip()
+            cat = rest[1:-1].strip() if rest.startswith("(") and rest.endswith(")") else rest
+            break
+    if direction is None:
+        if low in MONEY_IN_W:
+            direction, cat = "in", ("sale" if low in {"sale", "sales", "bikri", "बिक्री", "ਵਿਕਰੀ"} else "other")
+        elif low in CATEGORY_OF_LABEL or low in CATEGORY_LABEL:
+            direction, cat = "out", low
+        elif low in {"out", "kharcha", "kharch", "खर्च", "खर्चा"}:
+            direction, cat = "out", "other"
+        else:
+            raise ValueError(f"type '{v}' should look like 'Expense (Rent)' or 'Money in (Sale)'")
+    cat = cat.lower() or ("sale" if direction == "in" else "other")
+    return direction, CATEGORY_OF_LABEL.get(cat, cat if cat in CATEGORY_LABEL else "other")
+
+
+def norm(v) -> str:
+    """Compare cells the way a person reads them: 1500 == '1,500' == 1500.0."""
+    if isinstance(v, bool):
+        return str(v)
+    if isinstance(v, (int, float)):
+        return str(int(v)) if float(v).is_integer() else str(v)
+    t = str(v).strip()
+    num = t.replace(",", "")
+    try:
+        f = float(num)
+        return str(int(f)) if f.is_integer() and "e" not in num.lower() else str(f)
+    except ValueError:
+        return t
 
 
 # ---- reading back (restore) ------------------------------------------------------------
