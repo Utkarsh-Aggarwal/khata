@@ -71,6 +71,34 @@ def build(ledger: Ledger, owner: str) -> MCPServer:
         return {"since": start, "total": format_rupees(sum(totals.values())),
                 "by_category": [{"category": c, "amount": format_rupees(v)} for c, v in totals.items()]}
 
+    @srv.tool(description="Money received that is not udhaar (cash sales from bills, other income) since a "
+                          "date (YYYY-MM-DD; default: start of this month), totalled by category.")
+    def money_in(since: str = "") -> dict:
+        from datetime import date as _date
+        start = since[:10] if since else _date.today().replace(day=1).isoformat()
+        xs = ledger.expenses(owner, since=start, direction="in")
+        by: dict[str, int] = {}
+        for x in xs:
+            by[x.category] = by.get(x.category, 0) + x.paise
+        return {"since": start, "total": format_rupees(sum(by.values())),
+                "by_category": [{"category": c, "amount": format_rupees(v)} for c, v in by.items()]}
+
+    @srv.tool(description="Bills made with the bill generator, newest first: bill number, date, customer "
+                          "(or cash), items, total and whether it was paid in cash or added to udhaar.")
+    def bills(limit: int = 20) -> dict:
+        import json as _json
+        from .render import bill_items_text
+        with ledger.lock:
+            rows = ledger.db.execute("SELECT * FROM bills WHERE owner=? ORDER BY id DESC LIMIT ?",
+                                     (owner, max(1, min(limit, 200)))).fetchall()
+        return {"bills": [{"bill_no": r["id"], "date": r["bill_date"], "customer": r["customer"] or "Cash customer",
+                           "items": bill_items_text(_json.loads(r["items"])), "total": format_rupees(r["total"]),
+                           "payment": r["payment"]} for r in rows]}
+
+    @srv.tool(description="The shop's remembered item rates used to fill bills automatically.")
+    def rates() -> dict:
+        return {"rates": [{"item": n, "rate": format_rupees(r), "unit": u} for n, r, u in ledger.prices(owner)]}
+
     @srv.tool(description="Dry run: how the Khata bot would read a message such as 'Ramesh ko 500 udhaar'. "
                           "Does not save anything.")
     def parse_entry(text: str) -> dict:

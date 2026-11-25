@@ -25,7 +25,7 @@ def test_tools_in_process():
     _seed(lg)
     srv = build(lg, "shop")
     names = {t.name for t in asyncio.run(srv.list_tools())}
-    assert names == {"balances", "customer", "draft_reminders", "parse_entry", "expenses"}
+    assert names == {"balances", "customer", "draft_reminders", "parse_entry", "expenses", "money_in", "bills", "rates"}
 
     b = _text(asyncio.run(srv.call_tool("balances", {})))
     assert b["total_due"] == "₹650" and "Secret" not in json.dumps(b)          # per-owner isolation

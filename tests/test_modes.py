@@ -58,6 +58,14 @@ def test_edits_rate_qty_remove_and_price_memory():
     assert d.total == 34400
 
 
+def test_bill_money_is_exact():
+    l = billing.parse_line("ghee 0.7 kg 610.55")
+    assert l.rate == 61055 and l.amount == 42739           # 0.7 x 61055 = 42738.5 -> 42739, no float error
+    d = billing.Draft()
+    billing.apply(d, "a 3 x 0.10, b 3 x 0.20", lambda n: None)
+    assert d.total == 90
+
+
 def test_similar_short_names_are_not_merged():
     d = billing.Draft()
     billing.apply(d, "atta 2 kg 45, tel 1 L 180, aloo 1 kg 30", lambda n: None)

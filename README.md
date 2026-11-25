@@ -1,94 +1,101 @@
 # Khata 👻📒
 
-A paper khata stitched to voice, vision and chat, with ghosts that collect the dues.
+A paper khata stitched to voice, vision, chat and a Google Sheet, with ghosts that collect the dues.
 Kiroween 2026 entry, Frankenstein category. Runs entirely on free services.
 
-Shopkeepers record udhaar (credit) by typing, sending a voice note, or photographing a bill,
-in Hindi, Punjabi, Hinglish or English. Every entry is confirmed before it is saved.
+Small Indian shops run on a paper khata. Khata keeps the habit (talk, write, photograph a bill)
+and stitches it to a Telegram bot, a Whisper speech model, a vision model and a Google Sheet that
+the shopkeeper can edit directly.
 
-- `Ramesh ko 500 udhaar` proposes a credit entry and asks you to confirm
-- `रमेश ने 200 दिए` proposes a payment, matched to the same Ramesh across scripts
-- A bill photo reads the total, then asks who the customer is and whether it's credit or payment
-- `Ramesh ka kitna baaki`, `list`, `undo`, `export`
-- `Ramesh ka number 98765 43210` stores a WhatsApp number; `remind` lists drafted reminders
+**Try it:** message [@Ledgy637Bot](https://t.me/Ledgy637Bot) on Telegram, or open the web demo
+(link in the Devpost entry). Each Telegram chat gets its own private khata.
 
-Each customer who owes money appears as a ghost, most overdue first. **Hold a séance** to see
-a drafted reminder for each one in Hinglish, Hindi, Punjabi or English. Tapping it opens
-WhatsApp with the message typed out. The app never sends anything itself.
+## Three modes
 
-## The stitched parts (see the Lab panel)
+Every new message on Telegram gets three buttons, so the bot never guesses what you meant:
+
+| Mode | For | Example |
+|---|---|---|
+| 🧾 **Bill** | Making a bill for a customer | `atta 2 kg 45, sabun 2 x 35, cheeni 3 kg`, then edit with `atta 50`, `hatao sabun`, tap ✅ Done, choose 💵 Cash or 🤝 Udhaar, and get a **PDF bill** |
+| 📒 **Entry** | Money in or out with nobody owing | `aaj 5000 ki bikri`, `bijli 900`, a supplier's bill photo |
+| 🤝 **Udhaar** | Credit given or taken, and money returned | `Ramesh ko 500 udhaar`, `Ramesh ne 200 diye`; the balance after is shown each time |
+
+Input can be typed, a **voice note** (Hindi, Punjabi, Hinglish, English) or a **bill photo**,
+printed or *kacha* (handwritten). For a kacha bill the bot reads every line, checks
+quantity × rate and the written total, and warns about mistakes before anything is saved.
+
+Nothing is ever saved without a confirm tap.
+
+## Commands
+
+`/dues` (who owes you and whom you owe) · `/today` · `/expenses` · `/rates` · `/remind` (drafted
+WhatsApp reminders for customers) · `/export` (any table as PDF or Excel) · `/undo` · `/invite` and
+`/join` (several phones, one shop) · `/help`
+
+## The Google Sheet is two-way
+
+The shopkeeper may only ever open the sheet, so it is a working copy, not just a report:
+
+| Tab | |
+|---|---|
+| **Udhaar**, **Entries** | Editable: change a cell, delete a row to cancel it, type a new row to add one |
+| **Rates**, **Customers** | Editable: item rates for bills, customers' WhatsApp numbers |
+| **Bills**, **Dues** | Calculated, redrawn on every change |
+| **Settings** | Linked phones (do not edit) |
+
+Rows the bot can't read stay in the sheet with `⚠️ Not saved: <reason>`. On free hosting the disk is
+wiped on restart, so the bot rebuilds its database from the sheet on boot.
+
+## The stitched parts (see the Lab panel on the web page)
 
 | Part | File | Free service |
 |---|---|---|
-| Ledger: SQLite, integer paise, per-owner isolation, undo | `khata/ledger.py` | local |
+| Ledger: SQLite, integer paise, per-shop isolation, undo | `khata/ledger.py` | local |
+| Text brain, rule-based, 4 languages, who-paid-whom | `khata/extract.py`, `khata/flow.py` | local |
 | Cross-script names (Ramesh = रमेश = ਰਮੇਸ਼, Mohan ≠ Mohini) | `khata/names.py` | local |
-| Text understanding, rule-based | `khata/extract.py` | local |
-| Confirm / edit / cancel flow in en, hi, pa | `khata/flow.py` | local |
-| Voice notes: ffmpeg, then Whisper | `khata/voice.py` | Groq `whisper-large-v3` |
-| Bill photos: 3 validated fields | `khata/bills.py` | Groq `qwen/qwen3.8-27b` |
-| Telegram bot: polling locally, webhook on Render | `khata/telegram.py` | Telegram Bot API |
-| WhatsApp webhook (optional) | `khata/whatsapp.py` | Meta test number |
-| Google Sheet mirror and restore on boot | `khata/sheets.py` | Google Sheets API |
-| Séance reminders | `khata/reminders.py` | wa.me links |
-| AI budget and kill switch | `khata/guard.py` | local |
-| khata-mcp, read-only | `khata/mcp_server.py` | local |
-
-## Demo mode
-
-With no Groq key, a spent budget, or `KHATA_KILL=1`, the app keeps working. Text chat, the
-ghosts, the séance, export, undo and a pre-read sample bill all work. Voice notes and real bill
-photos reply asking the user to type instead. `/health` reports `"mode": "demo"`.
+| Bill generator, rate memory, PDF | `khata/billing.py` | local |
+| Ears: voice notes | `khata/voice.py` | Groq `whisper-large-v3` |
+| Eyes: bill and kacha-bill photos | `khata/bills.py` | Groq `qwen/qwen3.8-27b` |
+| Telegram bot (polling locally, webhook on Render), stale-button safety | `khata/telegram.py` | Telegram Bot API |
+| Two-way Google Sheet | `khata/sheets.py`, `khata/render.py` | Google Sheets API |
+| PDF and Excel export | `khata/export.py` | local |
+| khata-mcp, read-only tools for AI agents | `khata/mcp_server.py` | local |
 
 ## Safety
 
-- Nothing is saved without a confirm step. Voice, bills, Telegram and WhatsApp all go through the same flow.
-  On Telegram only the newest Yes/No buttons work; an old tap is ignored.
-  An unrelated message discards an unsaved entry, and the bot says so.
-- Text inside bill images is data. The customer and credit/payment are never taken from a bill.
-- WhatsApp webhooks are rejected unless the `X-Hub-Signature-256` HMAC matches. Repeated deliveries are ignored.
-- Audio is deleted right after transcription. Telegram and WhatsApp owners are stored as salted hashes, not chat ids or phone numbers.
-- Demo data has no phone numbers, so tapping a ghost can't message a stranger.
-- Rate limits on chat and demo login. Idle demo accounts are purged after 7 days. Text colours pass WCAG AA (`scripts/contrast.py`).
+- Every record needs a confirm tap. On Telegram only the newest buttons work, so an old **Yes** can't
+  confirm a different entry or become a customer called "Yes" (proved by property-based tests).
+- Text inside photos and voice notes is data, never instructions; a bill never decides the customer.
+- Money is integer paise everywhere, including bill maths. Single entries above ₹1 crore are refused.
+- Each chat or shop has its own khata; owners are salted hashes, not chat ids or phone numbers.
+- The bot token never appears in logs or errors. Audio is deleted after transcription.
 
 ## Extraction accuracy (rule-based, typed text)
 
-From `python -m evals.run` (full report in `evals/REPORT.md`):
-
-| set | result | note |
-|---|---|---|
-| golden | 32/32 | developed against, overfit by design |
-| dev2 | 15/15 | scored 6/15 when first written blind, then tuned on |
-| blind | 15/20 (75%) | never tuned on |
-
-None of the 67 cases produced a wrong entry that went straight to confirmation. Failures make
-the bot ask a follow-up question. Voice accuracy on real recordings has not been measured yet.
+`python -m evals.run`: golden **32/32**, dev2 **15/15**, blind **16/20** (80%, never tuned on).
+No case proposed a wrong entry straight to confirmation; misses become a follow-up question.
+Voice accuracy on real recordings has not been measured at scale yet.
 
 ## Run locally
 
 ```
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn khata.app:app --port 8765
-scripts/smoke.sh            # in another terminal; prints SMOKE OK
+cp .env.example .env        # add GROQ_API_KEY and TELEGRAM_BOT_TOKEN (both free)
+.venv/bin/uvicorn khata.app:app --env-file .env --port 8765
+scripts/smoke.sh            # prints SMOKE OK
 ```
 
-Open http://localhost:8765. A demo account with sample data is created automatically.
-For real voice and bill reading, start it with `GROQ_API_KEY=gsk_...` (free at console.groq.com).
-
-## Deploy and set up services
-
-Everything is free and needs no card. Follow **[docs/SETUP.md](docs/SETUP.md)**: GitHub, Groq,
-Render (`render.yaml` blueprint plus a keepalive ping), the Telegram bot, and the Google Sheet.
+Full setup (Telegram, Google Sheet, Render): [docs/SETUP.md](docs/SETUP.md).
 
 ## Built with Kiro
 
-Spec, steering, hooks and the MCP server are described in **[docs/KIRO.md](docs/KIRO.md)**.
-Submission material: [docs/DEVPOST.md](docs/DEVPOST.md), [docs/VIDEO.md](docs/VIDEO.md),
-[docs/subtitles.en.srt](docs/subtitles.en.srt).
+Two specs, steering, hooks, a custom agent, an MCP server and property-based tests:
+[docs/KIRO.md](docs/KIRO.md).
 
 ## Tests
 
-`python -m pytest -q` covers hypothesis property tests for the ledger, eval regression, voice,
-Telegram (including the stale-button rule), WhatsApp, bills, the Groq clients (HTTP mocked), the sheet mirror and restore, séance reminders,
-khata-mcp over real stdio, and a full judge flow with AI off.
+`python -m pytest -q`: 270+ tests, including Hypothesis property tests for the ledger, the export,
+the Telegram adapter (stale buttons, isolation, rate limits, token leaks, poller backoff) and the
+webhook secret.
 
-MIT licensed.
+MIT licensed. Noto Sans fonts in `khata/fonts` are under the SIL Open Font License.

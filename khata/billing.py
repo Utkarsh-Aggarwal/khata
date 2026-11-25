@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import re
+from decimal import ROUND_HALF_UP, Decimal
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -56,7 +57,10 @@ class Line:
     def amount(self) -> int | None:
         if self.total is not None:
             return self.total
-        return round(self.qty * self.rate) if self.rate is not None else None
+        if self.rate is None:
+            return None
+        # exact decimal maths: qty (e.g. 2.5 kg) x rate in paise, rounded half-up to whole paise
+        return int((Decimal(str(self.qty)) * self.rate).quantize(Decimal(1), ROUND_HALF_UP))
 
     def qty_text(self) -> str:
         q = int(self.qty) if float(self.qty).is_integer() else self.qty
@@ -79,7 +83,8 @@ class Draft:
 
 
 def _money(s: str) -> int:
-    return round(float(s) * 100)
+    """'45' or '45.50' rupees -> paise, without floating point."""
+    return int((Decimal(s) * 100).quantize(Decimal(1), ROUND_HALF_UP))
 
 
 def parse_line(seg: str) -> Line | None:

@@ -1,18 +1,19 @@
-# Demo video script (target 2:40, hard limit 3:00)
+# Demo video script (target 2:45, hard limit 3:00)
 
-Record the screen at 1080p. Speak English; on-screen chat is Hindi, Punjabi and Hinglish. Burn in or upload `docs/subtitles.en.srt`.
-Before recording: fresh browser window, Groq key on, the Telegram bot running, and wake the Render app.
+Record at 1080p: phone screen (Telegram) plus the Google Sheet on a laptop. Speak English; on-screen chat is in Hindi,
+Punjabi and Hinglish. Upload `docs/subtitles.en.srt`.
+
+Before recording: the bot running, a fresh chat with the bot, the sheet open, and a real kacha bill to photograph.
 
 | Time | Screen | Voice-over |
 |---|---|---|
-| 0:00–0:15 | A paper khata page (photo), then the Khata web app | Millions of Indian shops track credit in a paper khata. Khata stitches that notebook to voice, photos and chat, and its ghosts collect the dues. |
-| 0:15–0:35 | Ghost page: 4 ghosts, ₹5,350 due, Pappu "12 days overdue" | Everyone who owes money becomes a ghost. The most overdue haunts first. |
-| 0:35–0:55 | Type `Ramesh ko 500 udhaar`, then the Hindi confirm and **yes**. Ramesh goes to ₹2,200. | Type the way you talk. Nothing is saved until you confirm. |
-| 0:55–1:15 | Type `ਸੀਤਾ ਨੂੰ 300 ਉਧਾਰ`, confirm. Sita's existing ghost updates. | Punjabi script, same customer. Ramesh, रमेश and ਰਮੇਸ਼ are one person. |
-| 1:15–1:40 | Phone: Telegram voice note in Hindi. "Heard: …", confirm button, tap. | On Telegram, just speak. A free Whisper model hears it, and the confirm button still guards the ledger. |
-| 1:40–2:00 | Phone: photo of a bill. Total read, then "Who is the customer?" and "credit or payment?" | Photograph a bill. It reads the total, then always asks who and which way. Text on the bill is never trusted as instructions. |
-| 2:00–2:15 | Google Sheet: the new row appears. Then `undo` and the row flips to `cancelled`. | Every entry is mirrored to Google Sheets. Undo never deletes history. |
-| 2:15–2:30 | Choose ਪੰਜਾਬੀ, Hold a séance, tap Pappu, WhatsApp opens with a drafted reminder | The séance drafts reminders in the customer's language. You decide whether to send. |
-| 2:30–2:40 | Lab panel, then the repo's `.kiro/specs` | The Lab shows every stitched part. Built with Kiro specs, steering and hooks, on free services only. |
+| 0:00–0:12 | A paper khata page, then the Telegram chat | Millions of Indian shops run on a paper khata. Khata keeps the habit and does the bookkeeping. |
+| 0:12–0:35 | Hindi **voice note**: "Ramesh ko paanch sau udhaar". "Heard: …", then 🧾/📒/🤝, tap 🤝, confirm. Balance after shown | Just speak. Pick what it is, Bill, Entry or Udhaar, and confirm. It shows what Ramesh owes now. |
+| 0:35–1:00 | Type `atta 2 kg 45, sabun 2 x 35, cheeni 3 kg` → 🧾 Bill. Draft, `atta 50`, ✅ Done, 🤝 Udhaar, Ramesh. The **PDF** arrives | Make a bill in chat. It remembers rates and lets you edit, then sends a PDF and adds it to Ramesh's account. |
+| 1:00–1:25 | Photograph a **kacha bill**. Line items and "⚠️ Please check: 3 × ₹45 = ₹135, but the bill says ₹145" | Photograph a handwritten bill. It reads every line and catches the mistake before anything is saved. |
+| 1:25–1:50 | Laptop: the **Google Sheet**. Udhaar row appears. Change an amount in the sheet, then `/dues` in the bot shows the new number | The shopkeeper may only ever open the sheet, so it works both ways. Edit here, and the bot knows. |
+| 1:50–2:05 | `/export` → Dues → PDF arrives | Any table, as PDF or Excel. |
+| 2:05–2:20 | Web page: ghosts, Hold a séance, WhatsApp opens with a drafted reminder | Customers who owe money become ghosts. The séance drafts a polite reminder. You choose whether to send. |
+| 2:20–2:45 | Lab panel, then `.kiro/specs`, the property tests passing | Stitched from Telegram, Whisper, vision, Sheets and SQLite on free tiers, and built with Kiro specs, steering, hooks, a custom agent and property-based tests. |
 
-Fallback if a live part fails while recording: the sample bill button and demo-mode voice message both work with AI off. Say so on screen rather than faking it.
+If something fails while recording, show the web demo's sample bill and kacha sample. Say so on screen rather than faking it.
