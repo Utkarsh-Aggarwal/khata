@@ -69,6 +69,7 @@ select{font:inherit;padding:6px;border:2px solid var(--ink);background:#fffdf5;b
       <label class="alt" style="border:2px solid var(--ink);padding:8px 12px;border-radius:4px;cursor:pointer">🧾 Bill photo
         <input type="file" id="bill" accept="image/jpeg,image/png,image/webp" capture="environment" style="position:absolute;opacity:0;width:1px;height:1px"></label>
       <button type="button" class="alt" id="sample" title="Uses a pre-read sample bill; works with paid APIs off">🧾 Try sample bill</button>
+      <button type="button" class="alt" id="kacha" title="A pre-read handwritten bill with mistakes; works with paid APIs off">✍️ Try kacha bill</button>
     </div>
     <p class="note">Every entry asks you to confirm before it is saved. Demo data is private to this browser.</p>
   </section>
@@ -149,6 +150,7 @@ $("rlang").onchange=refresh;
 $("seanceBtn").onclick=()=>{const s=$("seance"),open=s.hidden;s.hidden=!open;$("seanceBtn").setAttribute("aria-expanded",String(open))};
 async function lab(){const d=await (await fetch("/api/lab")).json();
   $("parts").innerHTML=d.parts.map(p=>`<div class="part ${p.alive?"alive":"dead"}"><b>${esc(p.part)}</b><span class="st">${p.alive?"● alive":"○ dormant"}</span><div>${esc(p.impl)}</div><code>${esc(p.swap)}</code></div>`).join("")}
+$("kacha").onclick=async()=>{add("me","✍️ kacha bill (sample)");show(await api("/api/bill/sample?kind=kacha",{method:"POST"}))};
 $("del").onclick=async()=>{if(confirm("Delete all your data?")){await fetch("/api/data",{method:"DELETE"});add("bot","All your data was deleted.");refresh()}};
 (async()=>{   // no login here: api() logs in only when the cookie is missing, so a refresh keeps your data
   const h=await (await fetch("/health")).json();$("mode").textContent=h.mode==="demo"?"· demo mode (paid APIs off)":"· live";

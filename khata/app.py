@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .bills import MAX_IMAGE as BILL_MAX, SAMPLE_BILL, BillError, BillReader, intro, to_extraction
+from .bills import MAX_IMAGE as BILL_MAX, SAMPLE_BILL, SAMPLE_KACHA, BillError, BillReader, intro, to_extraction
 from .export import build_xlsx
 from .flow import Bot
 from .sheets import from_env as sheet_from_env
@@ -218,11 +218,12 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
         return on_image(o, await file.read(BILL_MAX + 1), file.content_type or "")
 
     @app.post("/api/bill/sample")
-    def bill_sample(sid: str | None = Cookie(None)):
-        """Demo-mode path: canned fields for the bundled sample bill image (no paid API)."""
+    def bill_sample(kind: str = "printed", sid: str | None = Cookie(None)):
+        """Demo-mode path: canned fields for a bundled sample bill (no paid API).
+        kind=kacha is a handwritten bill with arithmetic mistakes, to show the checks."""
         o = owner_of(sid)
         limit(o)
-        r = bill_reply(o, SAMPLE_BILL)
+        r = bill_reply(o, SAMPLE_KACHA if kind == "kacha" else SAMPLE_BILL)
         return {**r, "reply": "(sample bill, pre-read) " + r["reply"]}
 
     @app.get("/api/ledger")

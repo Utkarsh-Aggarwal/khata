@@ -220,4 +220,6 @@ def test_bill_vendor_reaches_the_sheet_name_column():
     SheetMirror(lg, sh, "o", Clock()).sync()
     row = sh.khata()[0]
     assert (row["Name"], row["Type"], row["Via"], row["Note"]) == ("Sharma Kirana Store", "Expense (Purchase)",
-                                                                       "Bill photo", "")
+                                                                       "Bill photo",
+                                                                       "Atta 10 kg ₹420; Toor dal 2 kg ₹298; "
+                                                                       "Sugar 2 kg ₹96; Matchbox 5 ₹10; GST ₹22.50")
