@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from . import billing
-from .extract import CATEGORY_OF, Extraction, extract, parse_amount
+from .extract import CATEGORY_OF, STOP, Extraction, extract, parse_amount
 from .ledger import Ledger, format_rupees
 from .names import name_key
 from .reminders import ghosts, normalize_phone
@@ -25,7 +25,7 @@ REMIND_W = {"remind", "reminder", "reminders", "yaad", "seance", "séance", "य
 
 YES = {"haan", "han", "ha", "yes", "y", "ok", "okay", "confirm", "sahi", "theek", "thik", "हाँ", "हां",
        "हा", "सही", "ठीक", "ਹਾਂ", "ਠੀਕ", "✅", "1", "yes.", "save"}
-NO = {"nahi", "nahin", "no", "n", "cancel", "nope", "नहीं", "नही", "रद्द", "ਨਹੀਂ", "ਨਹੀ", "❌", "0", "galat", "गलत"}
+NO = {"nahi", "nahin", "nhi", "nhin", "nahee", "no", "n", "cancel", "nope", "नहीं", "नही", "रद्द", "ਨਹੀਂ", "ਨਹੀ", "❌", "0", "galat", "गलत"}
 CREDIT_W = {"credit", "udhaar", "udhar", "उधार", "ਉਧਾਰ", "gave", "diya"}
 # Answers to "which way did the money go?"
 KIND_PAY = {"payment", "paid", "received", "jama", "जमा", "ਜਮ੍ਹਾ", "📥", "they", "he", "she", "unhone", "usne",
@@ -58,14 +58,61 @@ CATEGORY_NAME = {
 DOUBT_PHRASES = ("kya matlab", "matlab kya", "samajh nahi", "samjh nahi", "what does", "what is credit",
                  "what is payment", "which one", "kaunsa", "konsa", "क्या मतलब", "समझ नहीं", "ਸਮਝ ਨਹੀਂ")
 PAY_W = {"payment", "paid", "received", "jama", "जमा", "wapas", "वापस", "ਜਮ੍ਹਾ"}
+# Chat words that are never a name, so "acha" or "wait" at the confirm step doesn't rename anyone.
+CHAT_W = {"theek", "thik", "thick", "acha", "accha", "achha", "acchha", "done", "thanks", "thank", "thx", "ty",
+          "shukriya", "dhanyavad", "ruko", "ruk", "wait", "hmm", "hm", "hmmm", "bas", "ok", "okk", "okay", "k",
+          "haanji", "hanji", "ji", "bhai", "sir", "hello", "hi", "kya", "hua", "haa", "han", "sure", "fine", "good",
+          "great", "nice", "cool", "right", "fir", "phir", "abhi", "baad", "later", "chalo", "chal", "theekhai",
+          "kaun", "kon", "kab", "kahan", "kaha", "kyun", "kyu", "kaise", "kitna", "kitne", "who", "when", "why", "how",
+          "where", "which", "bye", "gn", "night", "morning", "end", "stop", "exit", "quit", "test", "testing",
+          "chahiye", "chaiye", "चाहिए", "ਚਾਹੀਦਾ", "bilkul", "pakka", "pakki", "zaroor", "jarur", "haanji", "mat", "naa", "बिल्कुल", "पक्का", "ज़रूर",
+          "मत", "ਬਿਲਕੁਲ", "ਪੱਕਾ", "ਜ਼ਰੂਰ", "ਨਾ",
+          "yaar", "yar", "pagal", "abe", "oye", "oy", "chhodo", "chodo", "koi", "kisi", "kisko", "kise", "sab",
+          "sabko", "woh", "wo", "yeh", "ye", "uska", "unka", "iska", "inka", "यार", "पागल", "छोड़ो", "कोई", "ਯਾਰ",
+          "कौन", "कब", "कहाँ", "क्यों", "कैसे", "ਕੌਣ", "ਕਦੋਂ", "ਕਿਉਂ", "ਕਿਵੇਂ",
+          "ठीक", "अच्छा", "धन्यवाद", "रुको", "बस", "जी", "हम्म", "ਠੀਕ", "ਵਧੀਆ", "ਧੰਨਵਾਦ", "ਰੁਕੋ", "ਬੱਸ"}
+# A reply made only of these, with at least one YES word, is a yes: "theek hai", "haan ji", "ok save karo".
+YES_FILLER = {"hai", "ji", "please", "pls", "plz", "karo", "kar", "kardo", "krdo", "do", "bhai", "save", "sir",
+              "haa", "haanji", "hanji", "kr", "है", "जी", "करो", "कर", "दो", "ਜੀ", "ਹੈ", "ਕਰੋ"}
+# Direction words in a correction ("nahi, maine diye", "usne liye", "Ramesh se liye").
+# "Returned" goes either way ("maine lautaye" = credit, "Ramesh ne lautaye" = payment), so it is a
+# give verb that needs an actor; alone it is asked.
+FIX_GIVE = {"diye", "diya", "dia", "de", "gave", "given", "lent", "दिए", "दिये", "दिया", "दे", "ਦਿੱਤੇ", "ਦਿੱਤਾ",
+            "returned", "return", "wapas", "vapas", "wapis", "lautaye", "lautaya", "lauta", "chukaye", "chukaya",
+            "वापस", "लौटाए", "लौटाया", "चुकाए", "ਮੋੜੇ", "ਮੋੜਿਆ"}
+FIX_TAKE = {"liye", "liya", "lia", "le", "took", "taken", "borrowed", "लिए", "लिये", "लिया", "ले", "ਲਏ", "ਲਿਆ"}
+FIX_RECV = {"mile", "mila", "received", "got", "मिले", "मिला", "ਮਿਲੇ", "ਮਿਲਿਆ"}
+FIX_CREDIT_W = {"credit", "udhaar", "udhar", "उधार", "ਉਧਾਰ", "📤"}
+FIX_PAY_W = {"payment", "jama", "जमा", "ਜਮ੍ਹਾ", "📥"}
+NEG = {"nahi", "nahin", "nhi", "nhin", "nahee", "nai", "na", "not", "no", "nope", "galat", "wrong", "never",
+       "didn't", "didnt", "dont", "don't", "doesn't", "doesnt", "isn't", "isnt", "wasn't", "wasnt", "नहीं", "नही", "गलत", "ਨਹੀਂ", "ਨਹੀ", "ਗਲਤ"}
+FIX_FIRST = {"i", "maine", "mainne", "hamne", "humne", "मैंने", "मैने", "हमने", "ਮੈਂ", "ਮੈਂਨੇ", "ਅਸੀਂ"}
+FIX_THIRD = {"he", "she", "they", "usne", "unhone", "unhonne", "उसने", "उन्होंने", "ਉਸਨੇ", "ਉਹਨਾਂ"}
+FIX_NE = {"ne", "ने", "ਨੇ"}
+FIX_TO = {"ko", "को", "ਨੂੰ", "to", "usko", "unko", "isko", "inko", "use", "unhe", "unhein", "ise", "inhe", "him",
+          "her", "them", "उसको", "उनको", "उसे", "उन्हें", "इसको", "ਉਸਨੂੰ", "ਉਹਨੂੰ", "ਉਹਨਾਂ ਨੂੰ"}
+FIX_FROM = {"se", "से", "ਤੋਂ", "from", "usse", "unse", "isse", "उससे", "उनसे", "ਉਸ ਤੋਂ", "ਉਹਨਾਂ ਤੋਂ"}
+FIX_KIND_W = (FIX_GIVE | FIX_TAKE | FIX_RECV | FIX_CREDIT_W | FIX_PAY_W | FIX_FIRST | FIX_THIRD | FIX_NE
+              | FIX_TO | FIX_FROM)
+# These negate whatever follows, wherever they sit ("I never gave", "not credit", "jama mat karo").
+NEG_ANYWHERE = {"not", "never", "didn't", "didnt", "dont", "don't", "doesn't", "doesnt", "isn't", "isnt", "wasn't",
+                "wasnt", "mat", "na", "naa", "मत", "ਨਾ"}
+HONORIFIC = {"ji", "bhai", "sahab", "saab", "sir", "जी", "भाई", "साहब", "ਜੀ", "ਭਾਈ"}
+# Words around a correction: "nahi, naam Ramesh hai", "no, its Ramesh", "galat, maine diye".
+FIX_FILLER = {"no", "nahi", "nahin", "na", "nope", "galat", "wrong", "not", "arre", "are", "arey", "oh", "sorry",
+              "its", "it's", "it", "is", "was", "name", "naam", "change", "badlo", "badal", "karo", "kar", "do",
+              "hai", "tha", "h", "the", "customer", "person", "sahi", "correct", "actually", "mean", "meant",
+              "matlab", "mtlb", "wala", "wale", "ka", "ki", "ke", "should", "be", "mera", "galti", "se", "this",
+              "kiye", "kiya", "kie", "kare", "किए", "किये", "किया", "ਕੀਤੇ", "ਕੀਤਾ", "paise", "pese", "पैसे", "ਪੈਸੇ",
+              "नहीं", "नही", "गलत", "नाम", "है", "था", "सही", "बदलो", "का", "की", "ਨਹੀਂ", "ਗਲਤ", "ਨਾਮ", "ਨਾਂ", "ਹੈ", "ਸੀ"}
 
 M = {
-    "confirm_credit": {"en": "Save: 📤 you gave {name} {amt}{due}. After this, {after}. Reply yes / no, or send a new amount.",
-                       "hi": "सेव करूँ: 📤 आपने {name} को {amt} दिए (उधार){due}। इसके बाद {after}। हाँ / नहीं, या नई रकम भेजें।",
-                       "pa": "ਸੇਵ ਕਰਾਂ: 📤 ਤੁਸੀਂ {name} ਨੂੰ {amt} ਦਿੱਤੇ (ਉਧਾਰ){due}। ਇਸ ਤੋਂ ਬਾਅਦ {after}। ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਭੇਜੋ।"},
-    "confirm_payment": {"en": "Save: 📥 {name} gave you {amt}. After this, {after}. Reply yes / no, or send a new amount.",
-                        "hi": "सेव करूँ: 📥 {name} ने आपको {amt} दिए। इसके बाद {after}। हाँ / नहीं, या नई रकम भेजें।",
-                        "pa": "ਸੇਵ ਕਰਾਂ: 📥 {name} ਨੇ ਤੁਹਾਨੂੰ {amt} ਦਿੱਤੇ। ਇਸ ਤੋਂ ਬਾਅਦ {after}। ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਭੇਜੋ।"},
+    "confirm_credit": {"en": "Save: 📤 you gave {name} {amt}{due}. After this, {after}. Reply yes / no, or send a new amount or the right name.",
+                       "hi": "सेव करूँ: 📤 आपने {name} को {amt} दिए (उधार){due}। इसके बाद {after}। हाँ / नहीं, या नई रकम या सही नाम भेजें।",
+                       "pa": "ਸੇਵ ਕਰਾਂ: 📤 ਤੁਸੀਂ {name} ਨੂੰ {amt} ਦਿੱਤੇ (ਉਧਾਰ){due}। ਇਸ ਤੋਂ ਬਾਅਦ {after}। ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਜਾਂ ਸਹੀ ਨਾਮ ਭੇਜੋ।"},
+    "confirm_payment": {"en": "Save: 📥 {name} gave you {amt}. After this, {after}. Reply yes / no, or send a new amount or the right name.",
+                        "hi": "सेव करूँ: 📥 {name} ने आपको {amt} दिए। इसके बाद {after}। हाँ / नहीं, या नई रकम या सही नाम भेजें।",
+                        "pa": "ਸੇਵ ਕਰਾਂ: 📥 {name} ਨੇ ਤੁਹਾਨੂੰ {amt} ਦਿੱਤੇ। ਇਸ ਤੋਂ ਬਾਅਦ {after}। ਹਾਂ / ਨਹੀਂ, ਜਾਂ ਨਵੀਂ ਰਕਮ ਜਾਂ ਸਹੀ ਨਾਮ ਭੇਜੋ।"},
     "saved": {"en": "Saved. Now {after}.", "hi": "सेव हो गया। अब {after}।", "pa": "ਸੇਵ ਹੋ ਗਿਆ। ਹੁਣ {after}।"},
     "confirm_expense": {"en": "Save: 🧾 shop expense {amt} ({cat}){note}? No customer's balance changes. "
                               "This month's expenses would be {month}. Reply yes / no, or send a new amount.",
@@ -166,6 +213,9 @@ M = {
                 "pa": "📤 ਉਧਾਰ = ਪੈਸਾ ਜਾਂ ਸਮਾਨ ਤੁਹਾਡੇ ਤੋਂ {name} ਨੂੰ ਗਿਆ। 📥 ਜਮ੍ਹਾ = ਪੈਸਾ {name} ਤੋਂ ਤੁਹਾਨੂੰ ਆਇਆ। {now}"},
     "cancelled": {"en": "Cancelled. Nothing saved.", "hi": "रद्द किया। कुछ सेव नहीं हुआ।",
                   "pa": "ਰੱਦ ਕੀਤਾ। ਕੁਝ ਸੇਵ ਨਹੀਂ ਹੋਇਆ।"},
+    "fixed_name": {"en": "✏️ Name changed to {name}.", "hi": "✏️ नाम बदलकर {name} किया।",
+                   "pa": "✏️ ਨਾਮ ਬਦਲ ਕੇ {name} ਕੀਤਾ।"},
+    "fixed_kind": {"en": "✏️ Direction changed.", "hi": "✏️ लेन-देन की दिशा बदली।", "pa": "✏️ ਲੈਣ-ਦੇਣ ਦੀ ਦਿਸ਼ਾ ਬਦਲੀ।"},
     "discarded": {"en": "(The unsaved entry was discarded.)", "hi": "(बिना सेव की एंट्री हटा दी गई।)",
                   "pa": "(ਬਿਨਾਂ ਸੇਵ ਕੀਤੀ ਐਂਟਰੀ ਹਟਾ ਦਿੱਤੀ ਗਈ।)"},
     "export": {"en": "Download your khata as Excel: {url}", "hi": "अपना खाता Excel में डाउनलोड करें: {url}",
@@ -718,12 +768,136 @@ class Bot:
         return self._r(self.say(key, lang, name=ex.customer, amt=format_rupees(ex.paise), due=due, after=after),
                        buttons=["yes", "no"], pending=True)
 
+    @staticmethod
+    def _fix_direction(w: set[str], named: bool) -> str | None:
+        """Which way, from a short correction. 'unknown' when the cues conflict or there's no actor:
+        then the bot asks instead of guessing. None when the reply says nothing about direction."""
+        give, take, recv = bool(w & FIX_GIVE), bool(w & FIX_TAKE), bool(w & FIX_RECV)
+        said_credit, said_pay = bool(w & FIX_CREDIT_W), bool(w & FIX_PAY_W)
+        if not (give or take or recv or said_credit or said_pay):
+            to, frm, ne = bool(w & FIX_TO), bool(w & FIX_FROM), bool(w & FIX_NE)
+            if to and not (frm or ne):
+                return "hint:add_credit"              # "Ramesh ko": sounds like the shop gave
+            if (frm or ne) and not to:
+                return "hint:add_payment"             # "Ramesh ne", "Ramesh se"
+            return None
+        if give + take + recv > 1 or (said_credit and said_pay):
+            return "add_unknown"
+        if not (give or take or recv):
+            return "add_credit" if said_credit else "add_payment"     # "udhaar", "jama", the buttons' words
+        first, third = bool(w & FIX_FIRST), bool(w & FIX_THIRD) or (named and bool(w & FIX_NE))
+        to, frm = bool(w & FIX_TO), bool(w & FIX_FROM)
+        if recv:                                      # "Ramesh se mile" / "mile": the shop received
+            if said_credit or to or third or (named and not (frm or first)):
+                return "add_unknown"                  # "Ramesh ko mile", "he got", "Ramesh got it": ask
+            return "add_payment"
+        if first + third > 1 or (first and frm and give) or (to and frm) or (third and to):
+            return "add_unknown"                      # "usne usko diye": someone gave someone; ask
+        if first or (to and give) or (frm and take):
+            shop_acts = True                          # "maine diye", "Ramesh ko diye", "Ramesh se liye"
+        elif third:
+            shop_acts = False                         # "usne diye", "Ramesh ne liye"
+        else:
+            return "add_unknown"                      # "diye" alone: who gave? ask
+        kind = "add_credit" if (give if shop_acts else take) else "add_payment"
+        if (said_credit and kind == "add_payment") or (said_pay and kind == "add_credit"):
+            return "add_unknown"
+        return kind
+
+    def _correction(self, owner, p: Pending, text: str) -> dict | None:
+        """'Ramesh', 'nahi Ramesh', 'naam Ramesh hai', 'nahi, maine diye', 'Ramesh ne liye': fix the
+        waiting entry's name and/or direction and ask again. None if it isn't a short correction.
+        Never saves: it always ends by asking again."""
+        ex, lang = p.ex, p.ex.lang
+        if parse_amount(text)[0] is not None or self._is_command(text):
+            return None                               # amounts and commands have their own handling
+        toks = [t.strip(".!?:'\"()") for t in re.sub(r"[,;]", " | ", text.lower()).split()]
+        toks = [t for t in toks if t]                 # "|" keeps "Suresh, Ramesh" as two groups
+        if not [t for t in toks if t != "|"] or len(toks) > 8 or set(toks) & YES:
+            return None
+        neg = max((i for i, t in enumerate(toks) if t in NEG), default=-1)
+        named, kinds = [], []
+        for i, t in enumerate(toks):
+            if t in NEG or t == "|":
+                continue
+            if t in FIX_KIND_W:                       # before fillers: "se" matters in "Ramesh se liye"
+                kinds.append((i, t))
+            elif t in FIX_FILLER or t in HONORIFIC:
+                continue
+            elif t in STOP or t in NOT_A_NAME or t in CHAT_W or not name_key(t) or len(t) < 2:
+                return None                           # some other word: a new message, not a correction
+            else:
+                named.append((i, t))
+        # Names in separate groups: "Suresh nahi, Ramesh" (Hindi: the one before "nahi" is wrong),
+        # "not Suresh, Ramesh" (English: the one right after "not" is wrong). Otherwise ambiguous.
+        groups: list[list[tuple[int, str]]] = []
+        for i, t in named:
+            if groups and groups[-1][-1][0] == i - 1:
+                groups[-1].append((i, t))
+            else:
+                groups.append([(i, t)])
+        def negated(g):                               # "Suresh nahi" (Hindi) or "not Suresh" (English)
+            after = g[-1][0] + 1
+            return (after < len(toks) and toks[after] in NEG and toks[after] != "not") or \
+                (g[0][0] > 0 and toks[g[0][0] - 1] == "not")
+        kept = [g for g in groups if not negated(g)]
+        if len(kept) > 1:
+            return None                               # "Ramesh, Sita": which one? treat as a new message
+        name = [t for _, t in kept[0]] if kept else []
+        if groups and not kept:                       # "Suresh nahi": the name is wrong, but no new one
+            if any(i < neg for i, _ in kinds) or kinds:
+                return None
+            ex.customer = None
+            return self._advance(owner, p)            # asks who it is
+        if len(name) > 3 or not (name or kinds):
+            return None
+        new_kind = self._fix_direction({t for _, t in kinds}, bool(name))
+        if new_kind and new_kind.startswith("hint:"):
+            new_kind = None if new_kind[5:] == ex.intent else "add_unknown"   # "Ramesh ko" on a payment: ask
+        # A negated direction is never guessed: "maine nahi diye", "not credit", "it was not udhaar".
+        # A leading "nahi"/"no" is different: it rejects the bot's reading ("nahi, maine diye").
+        negated_dir = bool(kinds) and (any(i < neg for i, _ in kinds) or bool(set(toks) & NEG_ANYWHERE))
+        if new_kind and negated_dir:
+            new_kind = "add_unknown"
+        if p.awaiting == "kind" and not name:
+            if negated_dir:
+                return self._ask_kind(lang, ex)       # "maine nahi diye" at the which-way question: ask again
+            if new_kind in (None, "add_unknown"):
+                return None                           # the kind question's own answers ("returned", "diye")
+        if not name and new_kind is None:
+            return None
+        notes = []
+        if name:
+            orig = [w.strip(".,!?;:'\"()") for w in text.split()]
+            shown = " ".join(w for w in orig if w.lower() in name)[:40]
+            new = self.ledger.find_customer(owner, shown) or shown.title()
+            if new != ex.customer:
+                ex.customer = new
+                notes.append(self.say("fixed_name", lang, name=new))
+        if new_kind and new_kind != ex.intent:
+            ex.intent = new_kind
+            if new_kind != "add_unknown":
+                notes.append(self.say("fixed_kind", lang))
+        r = self._advance(owner, p)
+        return {**r, "reply": " ".join(notes) + ("\n" if notes else "") + r["reply"]}
+
     def _continue(self, owner, p: Pending, text: str):
         low = text.lower().strip().rstrip(".!।॥")
         ex, lang = p.ex, p.ex.lang
-        if low in NO:
-            del self.pending[owner]
+        words = set(low.replace(",", " ").split())
+        if low in NO or (words & NO and words <= NO | NEG | YES_FILLER | {"karna", "karni", "karne", "save"}):
+            del self.pending[owner]                   # "nahi", "cancel karo", "nahi karna", "no no"
             return self._r(self.say("cancelled", lang))
+        if p.awaiting == "confirm" and words & YES and words <= YES | YES_FILLER \
+                and not any(ch.isdigit() for ch in low) and not (words & YES) <= {"1", "y"}:
+            # "haan kar do", "theek hai" are a yes; "1 do", "ok 1" carry a digit and are amounts
+            low = "yes"                               # "theek hai", "haan ji", "ok save karo"
+        elif p.awaiting in ("confirm", "kind") and words and words <= CHAT_W | YES_FILLER:
+            return self._advance(owner, p)            # "acha", "wait", "hmm": ask again, keep the entry
+        if p.awaiting in ("confirm", "kind") and ex.intent != "add_expense" and low not in YES:
+            r = self._correction(owner, p, text)
+            if r is not None:
+                return r
         if p.awaiting == "customer":
             words = set(low.replace("🧾", " 🧾 ").split())
             if ex.maybe_expense and words & EXPENSE_ANSWER:
@@ -732,7 +906,8 @@ class Bot:
             if extract(text).intent in ("undo", "help", "list", "balance", "expense_report") \
                     or low in ("export", "/export") or set(low.split()) & REMIND_W:
                 return None
-            name = " ".join(text.split())[:40]
+            name = " ".join(w for w in text.split() if w.lower().strip(".,!?") not in FIX_FILLER)[:40] \
+                or " ".join(text.split())[:40]             # "naam Ramesh hai" -> Ramesh
             if not name_key(name) or set(name.lower().split()) <= NOT_A_NAME:
                 return self._advance(owner, p)        # ask the same question again
             

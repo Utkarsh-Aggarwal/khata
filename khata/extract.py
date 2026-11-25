@@ -157,7 +157,12 @@ STOP = (CREDIT | PAYMENT | BAL | LIST | UNDO | HELP | NE | KO | PAST | {
     "pichhli", "pichli", "last", "पिछली", "ਪਿਛਲੀ", "gaye", "gaya", "गए", "poore", "pure", "पूरे",
     # the shopkeeper speaking: "मैंने रमेश को..." / "Maine Ramesh ko..." is never part of a name
     "maine", "mainne", "mainey", "main", "mai", "hamne", "humne", "ham", "hum", "i", "we", "maina",
-    "मैंने", "मैने", "मैं", "मै", "हमने", "हम", "ਮੈਂ", "ਮੈਂਨੇ", "ਅਸੀਂ"}) \
+    "मैंने", "मैने", "मैं", "मै", "हमने", "हम", "ਮੈਂ", "ਮੈਂਨੇ", "ਅਸੀਂ",
+    # ...nor is "to me / from me / my": "Mujhko Ramesh ne 500 diye" is Ramesh
+    "mujhko", "mujhe", "mujhse", "mujhey", "mujko", "mjhe", "mereko", "mere", "mera", "meri", "humko", "hamko",
+    "hame", "hamein", "humein", "hume", "hamse", "humse", "hamare", "humare", "my", "us",
+    "मुझको", "मुझे", "मुझसे", "मेरे", "मेरा", "मेरी", "हमको", "हमें", "हमसे", "हमारे",
+    "ਮੈਨੂੰ", "ਮੇਰੇ", "ਮੇਰਾ", "ਸਾਨੂੰ", "ਮੈਥੋਂ"}) \
     | set(WORDS) | set(MULT) | set(MODS)
 # Verb families for _direction. Future forms (dega, dunga, degi) are about later repayment,
 # not this entry, so they are deliberately absent.
