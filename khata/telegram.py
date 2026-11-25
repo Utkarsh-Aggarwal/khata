@@ -42,6 +42,7 @@ BUTTON_TITLES = {"yes": "✅ Yes / हाँ", "no": "❌ No / नहीं",
                  "exp:Dues": "📊 Dues", "exp:Rates": "🏷️ Rates", "exp:Customers": "👥 Customers",
                  "exp:all": "📚 All tables", "fmt:pdf": "📄 PDF", "fmt:xlsx": "📊 Excel",
                  "dir:in": "📥 Came in / आए", "dir:out": "📤 Went out / गए", "today": "📅 Dated today",
+                 "sheet:skip": "⏭️ Skip, no sheet / शीट नहीं चाहिए",
                  "reset:yes": "🗑️ Yes, clear it / हाँ, मिटाओ", "reset:no": "↩️ No, keep it / नहीं"}
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ERROR_REPLY = "Something went wrong. Nothing was saved. Please try again."
@@ -60,6 +61,23 @@ MENU = [("bill", "Make a bill / बिल बनाओ"), ("dues", "Udhaar balan
         ("undo", "Undo last entry / पिछली एंट्री हटाओ"), ("export", "Excel file / एक्सेल"),
         ("sheet", "Connect your Google Sheet / शीट जोड़ो"), ("invite", "Add another phone to this shop"),
         ("reset", "Start a fresh khata / नया खाता"), ("help", "How to use / मदद"), ("id", "Your chat id")]
+
+WELCOME = ("🙏 Namaste! I'm Ledgy, your khata.\n"
+           "Type, send a voice note, or a photo of a bill: udhaar, payments, shop expenses and bills. "
+           "Nothing is saved until you tap Yes.\n"
+           "नमस्ते! मैं आपका खाता हूँ। लिखिए, बोलिए या बिल की फोटो भेजिए।\n\n")
+SHEET_STEPS = ("📗 Keep your khata in your own Google Sheet too (optional, 1 minute):\n"
+               "1. Open https://sheets.new\n"
+               "2. Tap Share, paste the email from my next message, choose Editor, tap Send.\n"
+               "3. Copy the sheet's link and paste it here.\n\n"
+               "📗 अपनी Google Sheet में भी खाता रखें (ज़रूरी नहीं):\n"
+               "1. https://sheets.new खोलें\n"
+               "2. Share दबाएँ, मेरे अगले मैसेज वाला ईमेल डालें, Editor चुनें, Send दबाएँ।\n"
+               "3. शीट का लिंक कॉपी करके यहाँ भेजें।\n\n"
+               "👇 Press and hold to copy / दबाकर रखें और कॉपी करें:")
+SKIP_SHEET = ("Okay, no sheet. You can connect one any time with /sheet. Until then, /export gives you "
+              "a PDF or Excel copy.")
+SHEET_LINK = re.compile(r"docs\.google\.com/spreadsheets/d/[A-Za-z0-9_-]{20,}")
 
 log = logging.getLogger("khata.telegram")
 
@@ -297,6 +315,15 @@ class TelegramAdapter:
     def _is_main(self, chat_id: int, owner: str) -> bool:
         return owner_for_chat(chat_id, self._salt) == owner
 
+    def _wants_sheet(self, chat_id: int, owner: str) -> bool:
+        """Sheets are on, this is the shop's main phone, and no sheet is connected yet."""
+        return bool(self.sheets) and self._is_main(chat_id, owner) and self.sheets.get(owner) is None
+
+    def _welcome(self, chat_id: int, owner: str, greet: bool = True) -> None:
+        """The steps, then the bot's email alone in its own message so a long-press copies just it."""
+        self._send(chat_id, owner, {"reply": (WELCOME if greet else "") + SHEET_STEPS})
+        self._send(chat_id, owner, {"reply": self.sheets.email, "buttons": ["sheet:skip"]})
+
     def _sheet_command(self, chat_id: int, owner: str, text: str) -> dict:
         """/sheet: status and how to connect. /sheet <link>: connect. /sheet off: disconnect."""
         from .sheets import SheetError, sheet_id_of
@@ -398,8 +425,15 @@ class TelegramAdapter:
                     r = self._link_command(chat_id, cmd, text)
                     if r:
                         return self._send(chat_id, owner, r)
+                if cmd == "start" and self._wants_sheet(chat_id, owner):
+                    return self._welcome(chat_id, owner)
                 if cmd == "sheet":
+                    if len(text.split()) == 1 and self._wants_sheet(chat_id, owner):
+                        return self._welcome(chat_id, owner, greet=False)
                     return self._send(chat_id, owner, self._sheet_command(chat_id, owner, text))
+                if cmd is None and SHEET_LINK.search(text) and self._wants_sheet(chat_id, owner):
+                    # a pasted sheet link, after the welcome steps: connect it, no command needed
+                    return self._send(chat_id, owner, self._sheet_command(chat_id, owner, "/sheet " + text))
                 if cmd == "reset":
                     return self._send(chat_id, owner, self._reset_command(chat_id, owner))
                 if cmd == "id":
@@ -472,6 +506,9 @@ class TelegramAdapter:
             del self.keyboards[chat_id]
             owner = self._owner(chat_id)
             data = str(cq.get("data", ""))[:64]
+            if data == "sheet:skip":
+                return self._send(chat_id, owner, {"reply": SKIP_SHEET + "\n\n" + self.bot.handle(
+                    owner, "help", source="telegram")["reply"]})
             if data in ("reset:yes", "reset:no"):
                 return self._send(chat_id, owner, self._reset_confirm(chat_id, owner, data == "reset:yes"))
             self._send(chat_id, owner, self.bot.handle(owner, data, source="telegram"))

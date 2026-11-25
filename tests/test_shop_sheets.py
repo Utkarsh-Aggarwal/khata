@@ -224,3 +224,41 @@ def test_a_sheet_we_can_only_read_is_refused():
     except Exception as e:
         assert str(e) == "read only"
     assert p.get("shop-a") is None
+
+
+# ---- first contact: greet, show the steps, copy the email, paste the link --------------
+def test_start_greets_and_sends_the_email_alone_with_a_skip_button():
+    p, lg, _ = pool()
+    ad, api = tg(p, lg)
+    ad.handle_update(text_update(1, "/start", chat_id=MAIN))
+    steps, email = api.sent()[-2], api.sent()[-1]
+    assert "Namaste" in steps[1] and "sheets.new" in steps[1] and "Editor" in steps[1]
+    assert email[1] == "khata@sa.iam" and email[2] == ["sheet:skip"]
+
+
+def test_pasting_the_link_connects_without_a_command():
+    p, lg, g = pool()
+    ad, api = tg(p, lg)
+    shop = owner_for_chat(MAIN, SALT)
+    ad.handle_update(text_update(1, "/start", chat_id=MAIN))
+    ad.handle_update(text_update(2, f"https://docs.google.com/spreadsheets/d/{SID_A}/edit?usp=sharing", chat_id=MAIN))
+    assert "Sheet connected" in api.sent()[-1][1] and p.sheet_ids[shop] == SID_A
+    assert g.sheets[SID_A].tabs["Udhaar"][0][0] == "Ref"          # drawn right away
+
+
+def test_skip_keeps_working_without_a_sheet():
+    p, lg, _ = pool()
+    ad, api = tg(p, lg)
+    ad.handle_update(text_update(1, "/start", chat_id=MAIN))
+    ad.handle_update(callback(2, "sheet:skip", ad.keyboards[MAIN]))
+    assert "/sheet" in api.sent()[-1][1] and "Ramesh" in api.sent()[-1][1] and not p.mirrors
+
+
+def test_start_is_plain_help_once_a_sheet_is_connected_or_on_a_second_phone():
+    p, lg, _ = pool()
+    ad, api = tg(p, lg)
+    ad.handle_update(text_update(1, f"/sheet {SID_A}", chat_id=MAIN))
+    ad.handle_update(text_update(2, "/start", chat_id=MAIN))
+    assert "Namaste" not in api.sent()[-1][1] and api.sent()[-1][1] != "khata@sa.iam"
+    ad.handle_update(text_update(3, "/start", chat_id=OTHER))     # its own shop, but no sheet: greeted
+    assert api.sent()[-1][1] == "khata@sa.iam"

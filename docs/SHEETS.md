@@ -9,7 +9,8 @@ Browser demo accounts are never mirrored.
 
 | Send | What happens |
 |---|---|
-| `/sheet` | Shows your sheet's link, or how to connect one, with the email to share it with |
+| `/start` (first time) | Greets, lists the three steps, and sends the bot's email alone in a message so a long-press copies it. Paste the sheet's link back (no command needed), or tap **Skip** |
+| `/sheet` | Shows your sheet's link, or the same steps if none is connected |
 | `/sheet <link>` | Connects that sheet. An empty sheet gets your khata right away. A sheet that already has a khata (from an earlier phone or server) is read into an empty chat |
 | `/sheet <new link>` | Moves to a new sheet. The old sheet is left as it is |
 | `/sheet off` | Stops writing to the sheet. The sheet is left as it is |
