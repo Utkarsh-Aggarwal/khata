@@ -79,6 +79,7 @@ class Ledger:
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.RLock()
+        self.listeners: list = []          # called after every committed change (sheet mirror)
         with self.lock:
             self.db.executescript(SCHEMA)
             cols = {r["name"] for r in self.db.execute("PRAGMA table_info(customers)")}
@@ -90,8 +91,16 @@ class Ledger:
             # Expenses saved before the vendor column kept the shop name in the note as "bill: <shop>".
             self.db.execute("UPDATE expenses SET vendor=TRIM(SUBSTR(note, 7)), note='bill photo' "
                             "WHERE (vendor IS NULL OR vendor='') AND note LIKE 'bill: %'")
-            self.db.commit()
+            self._commit()
             self._rekey()
+
+    def _commit(self) -> None:
+        self.db.commit()
+        for fn in list(self.listeners):
+            try:
+                fn()
+            except Exception:
+                pass
 
     def _rekey(self) -> None:
         """Recompute stored name keys so a change to name_key() can't orphan old customers.
@@ -105,7 +114,7 @@ class Ledger:
                     self.db.execute("UPDATE customers SET key=? WHERE id=?", (k, r["id"]))
                 except sqlite3.IntegrityError:
                     pass
-        self.db.commit()
+        self._commit()
 
     # ---- customers -------------------------------------------------
     def _find(self, owner: str, name: str) -> sqlite3.Row | None:
@@ -139,7 +148,7 @@ class Ledger:
                 return r["id"]
             cur = self.db.execute(
                 "INSERT INTO customers(owner,name,key) VALUES(?,?,?)", (owner, name, k))
-            self.db.commit()
+            self._commit()
             return cur.lastrowid
 
     def set_phone(self, owner: str, name: str, phone: str | None) -> str:
@@ -149,7 +158,7 @@ class Ledger:
         with self.lock:
             cid = self.get_or_create_customer(owner, name)
             self.db.execute("UPDATE customers SET phone=? WHERE id=? AND owner=?", (phone, cid, owner))
-            self.db.commit()
+            self._commit()
             return self.db.execute("SELECT name FROM customers WHERE id=?", (cid,)).fetchone()["name"]
 
     def phones(self, owner: str) -> dict[str, str]:
@@ -166,7 +175,7 @@ class Ledger:
             self.db.execute(
                 "INSERT OR REPLACE INTO aliases(owner,alias_key,customer_id) VALUES(?,?,?)",
                 (owner, name_key(alias), r["id"]))
-            self.db.commit()
+            self._commit()
 
     # ---- entries ---------------------------------------------------
     def add_entry(self, owner: str, customer: str, kind: str, paise: int, *,
@@ -183,7 +192,7 @@ class Ledger:
                 "source,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                 (owner, cid, kind, paise, note, entry_date or date.today().isoformat(),
                  due_date, source, datetime.now(timezone.utc).isoformat()))
-            self.db.commit()
+            self._commit()
             return cur.lastrowid
 
     def undo_last(self, owner: str) -> Entry | Expense | None:
@@ -199,11 +208,11 @@ class Ledger:
                 return None
             if x and (not e or x["created_at"] > e["created_at"]):
                 self.db.execute("UPDATE expenses SET status='cancelled' WHERE id=? AND owner=?", (x["id"], owner))
-                self.db.commit()
+                self._commit()
                 return self.get_expense(owner, x["id"])
             self.db.execute("UPDATE entries SET status='cancelled' WHERE id=? AND owner=?",
                             (e["id"], owner))
-            self.db.commit()
+            self._commit()
             return self.get_entry(owner, e["id"])
 
     # ---- shop expenses ----------------------------------------------
@@ -218,7 +227,7 @@ class Ledger:
                 "VALUES(?,?,?,?,?,?,?,?)",
                 (owner, category, paise, note, (vendor or "").strip()[:60], entry_date or date.today().isoformat(),
                  source, datetime.now(timezone.utc).isoformat()))
-            self.db.commit()
+            self._commit()
             return cur.lastrowid
 
     @staticmethod
@@ -329,4 +338,4 @@ class Ledger:
         with self.lock:
             for t in ("entries", "expenses", "aliases", "customers"):
                 self.db.execute(f"DELETE FROM {t} WHERE owner=?", (owner,))
-            self.db.commit()
+            self._commit()

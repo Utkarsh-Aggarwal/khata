@@ -74,27 +74,43 @@ def test_undone_rows_leave_the_transactions_table():
     lg.undo_last("o")
     m.sync()
     assert [r["Ref"] for r in sh.khata()] == ["K-1"]
-    assert sh.dues()["Ramesh"]["They owe you (₹)"] == 500
+    assert sh.dues()["Ramesh"] == {"Name": "Ramesh", "Udhaar given (₹)": 500, "Amount paid back (₹)": 0}
 
 
-def test_dues_table_splits_given_paid_back_and_borrowed():
+def test_dues_table_shows_only_udhaar_given_and_paid_back():
     lg, sh = Ledger(), FakeSheet()
     m = SheetMirror(lg, sh, "o", Clock())
     lg.add_entry("o", "Ramesh", "credit", 150000)
     lg.add_entry("o", "Ramesh", "payment", 50000)
-    lg.add_entry("o", "Sita", "payment", 30000)          # you borrowed from Sita
+    lg.add_entry("o", "Sita", "credit", 30000)
     lg.add_expense("o", "rent", 800000)                   # expenses are not dues
     m.sync()
+    assert sh.tabs["Dues"][0] == ["Name", "Udhaar given (₹)", "Amount paid back (₹)"]
     d = sh.dues()
-    assert sh.tabs["Dues"][0] == render.DUES_COLUMNS
-    assert d["Ramesh"] == {"Name": "Ramesh", "Udhaar given (₹)": 1500, "Paid back to you (₹)": 500,
-                           "Borrowed from them (₹)": 0, "They owe you (₹)": 1000, "You owe them (₹)": 0}
-    assert d["Sita"]["Borrowed from them (₹)"] == 300 and d["Sita"]["You owe them (₹)"] == 300
-    assert d["Total"]["They owe you (₹)"] == 1000 and d["Total"]["You owe them (₹)"] == 300
-    assert d["Net: you will receive"]["Udhaar given (₹)"] == 700      # second cell holds the amount
+    assert d["Ramesh"] == {"Name": "Ramesh", "Udhaar given (₹)": 1500, "Amount paid back (₹)": 500}
+    assert d["Sita"] == {"Name": "Sita", "Udhaar given (₹)": 300, "Amount paid back (₹)": 0}
+    assert d["Total"] == {"Name": "Total", "Udhaar given (₹)": 1800, "Amount paid back (₹)": 500}
+    assert all(len(r) <= 3 for r in sh.tabs["Dues"])
     assert "rent" not in str(sh.tabs["Dues"]).lower()
 
 
+def test_sheet_updates_right_after_a_change():
+    import time as _t
+    lg, sh = Ledger(), FakeSheet()
+    m = SheetMirror(lg, sh, "o", Clock())
+    m.start(every=60)                                     # fallback timer far away
+    lg.add_entry("o", "Ramesh", "credit", 50000)
+    for _ in range(40):                                   # up to 4 s
+        if sh.khata():
+            break
+        _t.sleep(0.1)
+    assert [r["Name"] for r in sh.khata()] == ["Ramesh"]
+    lg.undo_last("o")
+    for _ in range(40):
+        if not sh.khata():
+            break
+        _t.sleep(0.1)
+    assert sh.khata() == []
 def test_old_tabs_are_removed_after_the_new_ones_are_written():
     lg, sh = Ledger(), FakeSheet()
     sh.tabs["Khata"], sh.tabs["Summary"] = [["old"]], [["old"]]

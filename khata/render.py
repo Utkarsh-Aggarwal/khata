@@ -14,8 +14,7 @@ from .ledger import Ledger
 TX_TAB, DUES_TAB = "Transactions", "Dues"
 COLUMNS = ["Ref", "Date", "Type", "Name", "Amount (₹)", "Due", "Via", "Note", "Recorded on"]
 COL = {c: i for i, c in enumerate(COLUMNS)}
-DUES_COLUMNS = ["Name", "Udhaar given (₹)", "Paid back to you (₹)", "Borrowed from them (₹)",
-                "They owe you (₹)", "You owe them (₹)"]
+DUES_COLUMNS = ["Name", "Udhaar given (₹)", "Amount paid back (₹)"]
 
 TYPE_LABEL = {"credit": "Udhaar given", "payment": "Payment received"}
 CATEGORY_LABEL = {
@@ -63,30 +62,18 @@ def transaction_rows(ledger: Ledger, owner: str) -> list[list]:
 
 
 def dues_rows(ledger: Ledger, owner: str) -> list[list]:
-    """Per person: udhaar given, paid back, borrowed, and the balance on whichever side it falls.
-
-    A payment from a person first pays back what they owe; anything beyond that is money you
-    borrowed from them (you owe it back). Same numbers as the bot's /dues reply.
-    """
+    """Per person: total udhaar given and total paid back (active entries only), plus a Total row."""
     people: dict[str, list[int]] = {}
     with ledger.lock:
         for r in ledger.db.execute(
                 "SELECT c.name, e.kind, e.paise FROM entries e JOIN customers c ON c.id=e.customer_id "
-                "WHERE e.owner=? AND e.status='active' ORDER BY e.entry_date, e.created_at, e.id", (owner,)):
+                "WHERE e.owner=? AND e.status='active'", (owner,)):
             people.setdefault(r["name"], [0, 0])[0 if r["kind"] == "credit" else 1] += r["paise"]
-    rows = []
-    tot = [0, 0, 0, 0, 0]
-    for name, (given, received) in sorted(people.items(), key=lambda kv: -(kv[1][0] - kv[1][1])):
-        paid_back = min(given, received)
-        borrowed = received - paid_back
-        bal = given - received
-        vals = [given, paid_back, borrowed, max(bal, 0), max(-bal, 0)]
-        tot = [a + b for a, b in zip(tot, vals)]
-        rows.append([name] + [_rupees(v) for v in vals])
-    rows.append([])
-    rows.append(["Total"] + [_rupees(v) for v in tot])
-    net = tot[3] - tot[4]
-    rows.append([("Net: you will receive" if net >= 0 else "Net: you have to pay"), _rupees(abs(net))])
+    rows = [[name, _rupees(g), _rupees(p)]
+            for name, (g, p) in sorted(people.items(), key=lambda kv: (-(kv[1][0] - kv[1][1]), kv[0]))]
+    if rows:
+        rows += [[], ["Total", _rupees(sum(g for g, _ in people.values())),
+                      _rupees(sum(p for _, p in people.values()))]]
     return [DUES_COLUMNS] + rows
 
 

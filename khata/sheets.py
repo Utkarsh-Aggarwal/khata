@@ -140,6 +140,7 @@ class SheetMirror:
         self._written: str | None = None     # fingerprint of what the sheet shows now
         self._next_at = 0.0
         self._fails = 0
+        self._wake = threading.Event()
 
     # ---- boot and restore --------------------------------------------------------------
     def boot(self, attempts: int = 2, wait: float = 3.0) -> dict:
@@ -248,14 +249,25 @@ class SheetMirror:
         self._written, self._fails, self._next_at = fp, 0, 0.0
         return {"synced": len(khata) - 1, "failed": 0, "pending": 0}
 
+    def poke(self) -> None:
+        """A change was committed: redraw now instead of waiting for the next check."""
+        self._wake.set()
+
     def start(self, every: float = 15.0) -> threading.Thread:
+        """Redraw right after each change (via the ledger's listener), and every `every` seconds
+        as a fallback for retries. Rapid changes are coalesced into one redraw."""
+        self.ledger.listeners.append(self.poke)
+        self._wake.set()                            # draw once right away on startup
+
         def loop():
             while True:
+                self._wake.wait(every)
+                self._wake.clear()
+                time.sleep(0.3)                     # let a burst of changes settle
                 try:
                     self.sync()
                 except Exception:
                     pass
-                time.sleep(every)
         t = threading.Thread(target=loop, daemon=True, name="sheet-mirror")
         t.start()
         return t
