@@ -1,12 +1,17 @@
-"""Mirror ledger entries to a Google Sheet. SQLite stays the source of truth.
+"""Google Sheet view of one shopkeeper's khata. SQLite stays the source of truth.
 
-sync() diffs the ledger against what the sheet has seen (table sheet_sync), so failures
-are retried on the next run with backoff. Appends are idempotent: before re-trying an
-append, the entry id is looked up in column A so a lost response can't duplicate a row.
-Undo flips the row's status cell to 'cancelled'; rows are never deleted.
+The Khata tab and the Summary tab are redrawn from the database whenever anything changes
+(khata/render.py), so the sheet, the Excel export and the bot always agree: fixed columns,
+sorted by date, running balance per customer. Hand edits in the sheet are overwritten.
+
+On free hosting the disk is wiped on restart, so on boot an empty database is rebuilt from the
+sheet (restore). Restore reads the current layout and both older ones. If restore fails, the
+mirror pauses: it never redraws the sheet from an empty database.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import sqlite3
@@ -14,47 +19,25 @@ import threading
 import time
 from typing import Protocol
 
+from . import render
 from .ledger import Ledger
 
-# One row per record. "name" is the customer, or who was paid for an expense (shop on a bill,
-# staff for salary). "category" is only for expenses. Older sheets used OLD_HEADER; restore reads both.
-HEADER = ["id", "date", "type", "name", "category", "rupees", "due", "status", "note"]
-OLD_HEADER = ["entry_id", "date", "customer", "kind", "rupees", "due", "status"]
-STATUS_COL = "H"
-LAST_COL = "I"
-
-# Summary tab: live formulas over the Khata tab, so the sheet reads like a khata, not a log.
-SUMMARY = [
-    ["Customer balances (positive = they owe you, negative = you owe them)", "", "", "",
-     "Shop expenses by month", "", ""],
-    ['=IFERROR(QUERY(FILTER({Khata!D2:D, IF(Khata!C2:C="credit",1,-1)*Khata!F2:F}, Khata!H2:H="active", '
-     '(Khata!C2:C="credit")+(Khata!C2:C="payment")), "select Col1, sum(Col2) group by Col1 '
-     'order by sum(Col2) desc label Col1 \'customer\', sum(Col2) \'balance (₹)\'", 0), "no customer entries yet")',
-     "", "", "",
-     '=IFERROR(QUERY(FILTER({LEFT(Khata!B2:B,7), Khata!E2:E, Khata!F2:F}, Khata!H2:H="active", '
-     'Khata!C2:C="expense"), "select Col1, Col2, sum(Col3) group by Col1, Col2 order by Col1 desc '
-     'label Col1 \'month\', Col2 \'category\', sum(Col3) \'spent (₹)\'", 0), "no expenses yet")'],
-]
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS sheet_sync(
-  entry_id INTEGER PRIMARY KEY, owner TEXT NOT NULL, row INTEGER, synced_status TEXT,
-  attempts INTEGER NOT NULL DEFAULT 0, next_at REAL NOT NULL DEFAULT 0, last_error TEXT);
-"""
+TAB, SUMMARY_TAB = "Khata", "Summary"
+LAYOUT_V1 = ["entry_id", "date", "customer", "kind"]        # first columns of the oldest layout
+LAYOUT_V2 = ["id", "date", "type", "name"]                  # 9-column layout used briefly
+DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 class SheetClient(Protocol):
-    def append(self, row: list) -> int: ...              # returns 1-based row number
-    def find(self, entry_id: int) -> int | None: ...
-    def set_status(self, row: int, status: str) -> None: ...
-    def read_all(self) -> list[list]: ...                 # every row, header included
+    def read_tab(self, tab: str) -> list[list]: ...        # every row, header included
+    def write_tab(self, tab: str, rows: list[list]) -> None: ...   # replace the tab's contents
 
 
 class GoogleSheetClient:
     """Sheets API v4 via a service account (share the sheet with the service account email)."""
     API = "https://sheets.googleapis.com/v4/spreadsheets"
 
-    def __init__(self, spreadsheet_id: str, creds_file: str | None = None, tab: str = "Khata",
+    def __init__(self, spreadsheet_id: str, creds_file: str | None = None, tab: str = TAB,
                  info: dict | None = None):
         from google.auth.transport.requests import AuthorizedSession
         from google.oauth2 import service_account
@@ -64,97 +47,79 @@ class GoogleSheetClient:
         self.s = AuthorizedSession(creds)
         self.id, self.tab = spreadsheet_id, tab
 
-    def _url(self, rng: str, suffix: str = "") -> str:
+    def _values(self, rng: str, suffix: str = "") -> str:
         from urllib.parse import quote
-        return f"{self.API}/{self.id}/values/{quote(f'{self.tab}!{rng}')}{suffix}"
+        return f"{self.API}/{self.id}/values/{quote(rng)}{suffix}"
 
-    def append(self, row):
-        r = self.s.post(self._url(f"A:{LAST_COL}", ":append"), timeout=20,
-                        params={"valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"},
-                        json={"values": [row]})
-        r.raise_for_status()
-        rng = r.json()["updates"]["updatedRange"]           # e.g. Khata!A12:I12
-        return int(re.sub(r"[A-Z]", "", rng.split("!")[1].split(":")[0]))
+    def _ensure_tab(self, tab: str) -> None:
+        meta = self.s.get(f"{self.API}/{self.id}", params={"fields": "sheets.properties.title"}, timeout=20)
+        meta.raise_for_status()
+        if tab not in {sh["properties"]["title"] for sh in meta.json().get("sheets", [])}:
+            self.s.post(f"{self.API}/{self.id}:batchUpdate", timeout=20, json={"requests": [
+                {"addSheet": {"properties": {"title": tab}}}]}).raise_for_status()
 
-    def find(self, entry_id):
-        r = self.s.get(self._url("A:A"), timeout=20)
-        r.raise_for_status()
-        for i, v in enumerate(r.json().get("values", []), start=1):
-            if v and str(v[0]) == str(entry_id):
-                return i
-        return None
-
-    def set_status(self, row, status):
-        r = self.s.put(self._url(f"{STATUS_COL}{row}"), params={"valueInputOption": "RAW"},
-                       json={"values": [[status]]}, timeout=20)
-        r.raise_for_status()
-
-    def read_all(self):
-        r = self.s.get(self._url(f"A:{LAST_COL}"), timeout=30, params={"valueRenderOption": "UNFORMATTED_VALUE"})
+    def read_tab(self, tab: str) -> list[list]:
+        r = self.s.get(self._values(f"{tab}!A:Z"), timeout=30, params={"valueRenderOption": "UNFORMATTED_VALUE"})
+        if r.status_code == 400:            # tab doesn't exist yet
+            return []
         r.raise_for_status()
         return r.json().get("values", [])
 
-    def rewrite(self, rows: list[list]) -> None:
-        """Replace the whole Khata tab (used once, to move an old sheet to the new columns)."""
-        self.s.post(self._url("A:Z", ":clear"), timeout=20, json={}).raise_for_status()
-        self.s.put(self._url(f"A1:{LAST_COL}{len(rows)}"), params={"valueInputOption": "RAW"},
-                   json={"values": rows}, timeout=30).raise_for_status()
-
-    def ensure_layout(self):
-        """Add (or refresh) the Summary tab of live formulas."""
-        from urllib.parse import quote
-        meta = self.s.get(f"{self.API}/{self.id}", params={"fields": "sheets.properties.title"}, timeout=20)
-        meta.raise_for_status()
-        if "Summary" not in {sh["properties"]["title"] for sh in meta.json().get("sheets", [])}:
-            self.s.post(f"{self.API}/{self.id}:batchUpdate", timeout=20, json={"requests": [
-                {"addSheet": {"properties": {"title": "Summary"}}}]}).raise_for_status()
-        self.s.put(f"{self.API}/{self.id}/values/{quote('Summary!A1:G2')}", timeout=20,
-                   params={"valueInputOption": "USER_ENTERED"}, json={"values": SUMMARY}).raise_for_status()
+    def write_tab(self, tab: str, rows: list[list]) -> None:
+        self._ensure_tab(tab)
+        self.s.post(self._values(f"{tab}!A:Z", ":clear"), timeout=20, json={}).raise_for_status()
+        if rows:
+            self.s.put(self._values(f"{tab}!A1"), params={"valueInputOption": "RAW"},
+                       json={"values": rows}, timeout=30).raise_for_status()
 
 
 def _money(v) -> int:
     return round(float(str(v).replace(",", "").replace("₹", "")) * 100)
 
 
-def _parse_new(r: list) -> tuple:
+def _parse_v2(r: list) -> dict:
     # id, date, type, name, category, rupees, due, status, note
-    return (str(r[0]).strip(), str(r[2]).strip(), str(r[1])[:10], str(r[3]).strip(), str(r[4]).strip(),
-            _money(r[5]), str(r[6])[:10] or None, str(r[7]).strip() or "active", str(r[8]))
+    r = list(r) + [""] * 9
+    sid = str(r[0]).strip()
+    kind = str(r[2]).strip()
+    return {"id": int(sid[1:]) if kind == "expense" else int(float(sid)), "kind": kind, "date": str(r[1])[:10],
+            "name": str(r[3]).strip(), "category": str(r[4]).strip(), "paise": _money(r[5]),
+            "due": str(r[6])[:10] or None, "status": str(r[7]).strip() or "active", "note": str(r[8]),
+            "via": "sheet", "recorded": ""}
 
 
-def _parse_old(r: list) -> tuple:
+def _parse_v1(r: list) -> dict:
     # entry_id, date, customer (or category), kind, rupees, due, status, note (bill vendor for expenses)
+    r = list(r) + [""] * 8
     sid, kind, note = str(r[0]).strip(), str(r[3]).strip(), str(r[7])
     if kind == "expense":
         vendor = note[6:].strip() if note.startswith("bill: ") else ""
-        return sid, kind, str(r[1])[:10], vendor, str(r[2]).strip(), _money(r[4]), None, \
-            str(r[6]).strip() or "active", "bill photo" if vendor else note
-    return sid, kind, str(r[1])[:10], str(r[2]).strip(), "", _money(r[4]), str(r[5])[:10] or None, \
-        str(r[6]).strip() or "active", note
+        return {"id": int(sid[1:]), "kind": kind, "date": str(r[1])[:10], "name": vendor,
+                "category": str(r[2]).strip(), "paise": _money(r[4]), "due": None,
+                "status": str(r[6]).strip() or "active", "note": "bill photo" if vendor else note,
+                "via": "sheet", "recorded": ""}
+    return {"id": int(float(sid)), "kind": kind, "date": str(r[1])[:10], "name": str(r[2]).strip(), "category": "",
+            "paise": _money(r[4]), "due": str(r[5])[:10] or None, "status": str(r[6]).strip() or "active",
+            "note": note, "via": "sheet", "recorded": ""}
 
 
 class SheetMirror:
     def __init__(self, ledger: Ledger, client: SheetClient, owner: str, clock=time.time):
         self.ledger, self.client, self.owner, self.clock = ledger, client, owner, clock
-        self.paused = False          # set when restore failed: never write to the sheet blind
+        self.paused = False          # set when restore failed: never redraw the sheet blind
         self.boot_result: dict = {}
-        with ledger.lock:
-            ledger.db.executescript(SCHEMA)
+        self._written: str | None = None     # fingerprint of what the sheet shows now
+        self._next_at = 0.0
+        self._fails = 0
 
+    # ---- boot and restore --------------------------------------------------------------
     def boot(self, attempts: int = 2, wait: float = 3.0) -> dict:
-        """Call before serving requests. Restores from the sheet; pauses syncing if that fails,
-        because writing new rows after a failed restore could reuse entry ids already in the sheet."""
+        """Call before serving requests. Restores an empty database from the sheet; pauses the
+        mirror if that fails, so a wiped database can never overwrite the shopkeeper's sheet."""
         for n in range(attempts):
             try:
                 self.boot_result = self.restore()
                 self.paused = False
-                self._migrate_layout()
-                layout = getattr(self.client, "ensure_layout", None)
-                if layout:
-                    try:
-                        layout()                       # cosmetic: never blocks syncing
-                    except Exception as ex:
-                        self.boot_result = {**self.boot_result, "layout_error": type(ex).__name__}
                 return self.boot_result
             except Exception as ex:      # network, auth, quota
                 self.boot_result = {"error": type(ex).__name__}
@@ -164,141 +129,88 @@ class SheetMirror:
         return self.boot_result
 
     def restore(self) -> dict:
-        """Rebuild this owner's entries from the sheet after free hosting wiped the disk.
-
-        Runs only when the database has no entries at all. Restored entries keep their original
-        ids, so later syncs and undo keep updating the same sheet rows. Rows that fail
-        validation are skipped and counted, never guessed at.
-        """
         with self.ledger.lock:
             if (self.ledger.db.execute("SELECT 1 FROM entries LIMIT 1").fetchone()
                     or self.ledger.db.execute("SELECT 1 FROM expenses LIMIT 1").fetchone()):
                 return {"restored": 0, "skipped": 0, "reason": "database not empty"}
-        rows = self.client.read_all()
+        rows = self.client.read_tab(TAB)
         if not rows:
-            self.client.append(HEADER)            # brand-new sheet: label the columns
             return {"restored": 0, "skipped": 0, "reason": "new sheet"}
-        new = [str(c).strip().lower() for c in rows[0][:3]] == ["id", "date", "type"]
+        head = [str(c).strip() for c in rows[0]]
+        low = [c.lower() for c in head]
+        if head[:len(render.COLUMNS)] == render.COLUMNS:
+            parse = render.parse_row
+        elif low[:4] == LAYOUT_V2:
+            parse = _parse_v2
+        elif low[:4] == LAYOUT_V1 or low[:1] == ["entry_id"]:
+            parse = _parse_v1
+        else:
+            return {"restored": 0, "skipped": len(rows), "reason": "unknown sheet layout"}
         restored = skipped = 0
         with self.ledger.lock:
-            for i, row in enumerate(rows, start=1):
-                row = list(row) + [""] * (9 - len(row))
-                if i == 1 or not str(row[0]).strip():
+            for row in rows[1:]:
+                if not row or not str(row[0]).strip():
                     continue
                 try:
-                    self._restore_row(i, *(_parse_new(row) if new else _parse_old(row)))
+                    self._insert(parse(row))
                     restored += 1
-                except (ValueError, TypeError, sqlite3.IntegrityError):
+                except (ValueError, TypeError, IndexError, sqlite3.IntegrityError):
                     skipped += 1
             self.ledger.db.commit()
         return {"restored": restored, "skipped": skipped}
 
-    def _restore_row(self, i, sid, kind, entry_date, name, category, paise, due, status, note) -> None:
-        """Validate and insert one row with its original id. Caller holds the lock."""
-        ok_date = re.fullmatch(r"\d{4}-\d{2}-\d{2}", entry_date)
-        if (kind not in ("credit", "payment", "expense") or status not in ("active", "cancelled")
-                or not 0 < paise <= 10**9 or not ok_date or (due and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", due))):
-            raise ValueError(sid)
-        created = entry_date + "T00:00:00+00:00"
-        if kind == "expense":
-            xid = int(str(sid).strip()[1:])
-            if xid <= 0 or not category:
-                raise ValueError(sid)
+    def _insert(self, d: dict) -> None:
+        """Validate one parsed row and insert it with its original id. Caller holds the lock."""
+        if (d["kind"] not in ("credit", "payment", "expense") or d["status"] not in ("active", "cancelled")
+                or not 0 < d["paise"] <= 10**9 or not DATE.fullmatch(d["date"]) or d["id"] <= 0
+                or (d["due"] and not DATE.fullmatch(d["due"]))):
+            raise ValueError(d)
+        created = (d["recorded"] if DATE.fullmatch(d.get("recorded") or "") else d["date"]) + "T00:00:00+00:00"
+        if d["kind"] == "expense":
             self.ledger.db.execute(
                 "INSERT INTO expenses(id,owner,category,paise,note,vendor,entry_date,status,source,created_at) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?)",
-                (xid, self.owner, category[:40], paise, note[:200], name[:60], entry_date, status, "sheet", created))
-            key = -xid
-        else:
-            key = int(float(sid))
-            if not name:
-                raise ValueError(sid)
-            cid = self.ledger.get_or_create_customer(self.owner, name)
-            self.ledger.db.execute(
-                "INSERT INTO entries(id,owner,customer_id,kind,paise,note,entry_date,due_date,status,"
-                "source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (key, self.owner, cid, kind, paise, note[:200], entry_date, due, status, "sheet", created))
+                (d["id"], self.owner, (d["category"] or "other")[:40], d["paise"], d["note"][:200],
+                 d["name"][:60], d["date"], d["status"], d["via"], created))
+            return
+        if not d["name"]:
+            raise ValueError(d)
+        cid = self.ledger.get_or_create_customer(self.owner, d["name"])
         self.ledger.db.execute(
-            "INSERT OR REPLACE INTO sheet_sync(entry_id,owner,row,synced_status,attempts,next_at) "
-            "VALUES(?,?,?,?,0,0)", (key, self.owner, i, status))
+            "INSERT INTO entries(id,owner,customer_id,kind,paise,note,entry_date,due_date,status,source,created_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (d["id"], self.owner, cid, d["kind"], d["paise"], d["note"][:200], d["date"], d["due"], d["status"],
+             d["via"], created))
 
-    def _migrate_layout(self, force: bool = False) -> None:
-        """An old-format sheet is rewritten once in the new columns, from the database.
-        `force` rewrites a new-format sheet too (after a data fix in the database)."""
-        read = getattr(self.client, "read_all", None)
-        rewrite = getattr(self.client, "rewrite", None)
-        if not read or not rewrite:
-            return
-        rows = read()
-        if not rows or (not force and [str(c).strip().lower() for c in rows[0][:3]] == ["id", "date", "type"]):
-            return
-        recs = sorted(self._records(), key=lambda r: (str(r[3][1]), r[1]))   # by date
-        rewrite([HEADER] + [r[3] for r in recs])
-        with self.ledger.lock:
-            self.ledger.db.execute("DELETE FROM sheet_sync WHERE owner=?", (self.owner,))
-            for n, (key, _, status, _) in enumerate(recs, start=2):
-                self.ledger.db.execute(
-                    "INSERT INTO sheet_sync(entry_id,owner,row,synced_status,attempts,next_at) VALUES(?,?,?,?,0,0)",
-                    (key, self.owner, n, status))
-            self.ledger.db.commit()
-        self.boot_result = {**self.boot_result, "migrated_rows": len(recs)}
-
-    def _records(self) -> list[tuple[int, str, str, list]]:
-        """Everything mirrored: (sync key, sheet id, status, row). Expenses use negative keys."""
-        out = [(e.id, str(e.id), e.status, [e.id, e.entry_date, e.kind, e.customer, "", e.paise / 100,
-                                            e.due_date or "", e.status, e.note or ""])
-               for e in self.ledger.entries(self.owner, include_cancelled=True)]
-        out += [(-x.id, f"E{x.id}", x.status, [f"E{x.id}", x.entry_date, "expense", x.vendor, x.category,
-                                               x.paise / 100, "", x.status, x.note or ""])
-                for x in self.ledger.expenses(self.owner, include_cancelled=True)]
-        return out
-
-    def _state(self) -> dict[int, dict]:
-        with self.ledger.lock:
-            rows = self.ledger.db.execute("SELECT * FROM sheet_sync WHERE owner=?", (self.owner,)).fetchall()
-        return {r["entry_id"]: dict(r) for r in rows}
+    # ---- redraw ------------------------------------------------------------------------
+    def _views(self) -> tuple[list[list], list[list], str]:
+        khata = [render.COLUMNS] + render.ledger_rows(self.ledger, self.owner)
+        summary = render.summary_rows(self.ledger, self.owner)
+        fp = hashlib.sha256(json.dumps([khata, summary], ensure_ascii=False, default=str).encode()).hexdigest()
+        return khata, summary, fp
 
     def pending(self) -> int:
-        st = self._state()
-        return sum(1 for key, _, status, _ in self._records() if st.get(key, {}).get("synced_status") != status)
+        """1 if the sheet is behind the database, else 0."""
+        return int(self._views()[2] != self._written)
 
     def sync(self) -> dict:
         if self.paused:
             return {"synced": 0, "failed": 0, "pending": self.pending(), "paused": True}
-        done = failed = 0
+        khata, summary, fp = self._views()
+        if fp == self._written:
+            return {"synced": 0, "failed": 0, "pending": 0}
         now = self.clock()
-        with self.ledger.lock:
-            st = self._state()
-            todo = [r for r in self._records()
-                    if st.get(r[0], {}).get("synced_status") != r[2] and st.get(r[0], {}).get("next_at", 0) <= now]
-        for key, sheet_id, status, values in todo:
-            s = st.get(key, {})
-            try:
-                row = s.get("row")
-                if row is None and s.get("attempts", 0) > 0:
-                    row = self.client.find(sheet_id if key < 0 else key)   # did a previous append land?
-                if row is None:
-                    row = self.client.append(values)
-                elif status != s.get("synced_status"):
-                    self.client.set_status(row, status)
-                self._save(key, row, status, 0, 0, None)
-                done += 1
-            except Exception as ex:                          # retry later with backoff
-                n = s.get("attempts", 0) + 1
-                self._save(key, s.get("row"), s.get("synced_status"), n,
-                           now + min(300, 2 ** n), type(ex).__name__)
-                failed += 1
-        return {"synced": done, "failed": failed, "pending": self.pending()}
-
-    def _save(self, entry_id, row, status, attempts, next_at, err):
-        with self.ledger.lock:
-            self.ledger.db.execute(
-                "INSERT INTO sheet_sync(entry_id,owner,row,synced_status,attempts,next_at,last_error) "
-                "VALUES(?,?,?,?,?,?,?) ON CONFLICT(entry_id) DO UPDATE SET row=excluded.row, "
-                "synced_status=excluded.synced_status, attempts=excluded.attempts, "
-                "next_at=excluded.next_at, last_error=excluded.last_error",
-                (entry_id, self.owner, row, status, attempts, next_at, err))
-            self.ledger.db.commit()
+        if now < self._next_at:
+            return {"synced": 0, "failed": 0, "pending": 1}
+        try:
+            self.client.write_tab(TAB, khata)
+            self.client.write_tab(SUMMARY_TAB, summary)
+        except Exception:                                    # retry later with backoff
+            self._fails += 1
+            self._next_at = now + min(300, 2 ** self._fails)
+            return {"synced": 0, "failed": 1, "pending": 1}
+        self._written, self._fails, self._next_at = fp, 0, 0.0
+        return {"synced": len(khata) - 1, "failed": 0, "pending": 0}
 
     def start(self, every: float = 15.0) -> threading.Thread:
         def loop():
@@ -321,5 +233,4 @@ def from_env(ledger: Ledger, owner: str | None) -> SheetMirror | None:
     path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if not (sid and owner and (info or path)):
         return None
-    import json
     return SheetMirror(ledger, GoogleSheetClient(sid, path, info=json.loads(info) if info else None), owner)

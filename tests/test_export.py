@@ -64,18 +64,22 @@ def test_export_round_trip(ops):
     body = rows[1:]
 
     mine = expected[OWNER]
-    assert [r[0] for r in body] == sorted(mine)          # one row per entry, ledger order
+    C = {c: i for i, c in enumerate(HEADER)}
+    ids = [int(r[C["Ref"]][2:]) for r in body]
+    assert sorted(ids) == sorted(mine)                    # one row per entry of this owner only
+    assert [r[C["Date"]] for r in body] == sorted(r[C["Date"]] for r in body)   # sorted by date
     other_ids = set(expected[OTHER])
-    for eid, customer, kind, rupees, entry_date, due, status in body:
-        assert eid not in other_ids                       # never another owner's rows
+    for r in body:
+        eid = int(r[C["Ref"]][2:])
+        assert r[C["Ref"]].startswith("K-") and (eid not in other_ids or eid in mine)
         e = mine[eid]
-        assert customer == e["customer"]
-        assert kind == e["kind"]
-        assert isinstance(e["paise"], int)
-        assert round(rupees * 100) == e["paise"]
-        assert entry_date == e["date"]
-        assert due == e["due"]
-        assert status == e["status"]
+        assert r[C["Name"]] == e["customer"]
+        assert r[C["Type"]] == ("Udhaar given" if e["kind"] == "credit" else "Payment received")
+        amount = r[C["Out (₹)"]] if e["kind"] == "credit" else r[C["In (₹)"]]
+        assert isinstance(e["paise"], int) and round(amount * 100) == e["paise"]
+        assert r[C["Date"]] == e["date"]
+        assert (r[C["Due"]] or None) == e["due"]
+        assert r[C["Status"]] == e["status"]
 
 
 def _rows(data: bytes) -> list[tuple]:
@@ -117,5 +121,6 @@ def test_api_export_serves_build_xlsx_for_demo_login():
     rows = _rows(r.content)
     assert rows == _rows(build_xlsx(lg, sid))
     assert list(rows[0]) == HEADER
-    assert [row[0] for row in rows[1:]] == [e.id for e in entries]
-    assert "Stranger" not in {row[1] for row in rows[1:]}
+    assert sorted(row[0] for row in rows[1:]) == sorted(f"K-{e.id}" for e in entries)
+    assert "Stranger" not in {row[3] for row in rows[1:]}
+    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Khata", "Summary"]

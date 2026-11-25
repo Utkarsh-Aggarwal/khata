@@ -10,6 +10,7 @@ from khata.export import build_xlsx
 from khata.extract import extract
 from khata.flow import Bot
 from khata.ledger import Ledger
+from khata import render
 from khata.sheets import SheetMirror
 
 from test_sheets import Clock, FakeSheet
@@ -124,40 +125,6 @@ def test_month_filter():
     assert lg.expense_totals("o", date.today().replace(day=1).isoformat()) == {"rent": 200}
 
 
-def test_export_has_expenses_sheet():
-    lg = Ledger()
-    lg.add_entry("o", "Ramesh", "credit", 50000)
-    lg.add_expense("o", "electricity", 90050, note="bill")
-    wb = load_workbook(io.BytesIO(build_xlsx(lg, "o")))
-    assert wb.sheetnames == ["Khata", "Expenses"]
-    rows = list(wb["Expenses"].iter_rows(values_only=True))
-    assert rows[1][1:3] == ("electricity", 900.5)
-
-
-def test_sheet_mirror_and_restore_expenses():
-    sh = FakeSheet()
-    lg = Ledger()
-    m = SheetMirror(lg, sh, "shop", Clock())
-    lg.add_entry("shop", "Ramesh", "credit", 50000, entry_date="2026-11-01")
-    lg.add_expense("shop", "electricity", 90000, entry_date="2026-11-02", note="bill")
-    lg.add_expense("shop", "tea", 5000, entry_date="2026-11-03")
-    lg.undo_last("shop")                                   # cancels the tea expense
-    m.sync()
-    assert [r[0] for r in sh.rows[1:]] == [1, "E1", "E2"]
-    assert sh.rows[3][2:5] == ["expense", "", "tea"] and sh.rows[3][7] == "cancelled"
-    assert m.sync() == {"synced": 0, "failed": 0, "pending": 0}
-
-    fresh = Ledger()                                       # disk wiped
-    m2 = SheetMirror(fresh, sh, "shop", Clock())
-    assert m2.boot() == {"restored": 3, "skipped": 0}
-    assert fresh.balances("shop") == {"Ramesh": 50000}
-    assert fresh.expense_totals("shop") == {"electricity": 90000}
-    assert m2.sync()["synced"] == 0
-    new = fresh.add_expense("shop", "rent", 100)
-    m2.sync()
-    assert new == 3 and sh.rows[-1][0] == "E3"
-
-
 @pytest.mark.parametrize("answer", ["Me", "me", "mera", "khud", "मैं", "myself", "🧾"])
 def test_me_means_shop_expense_not_a_customer_named_me(answer):
     """Real bug from the Google Sheet: 'Me' was saved as a customer with a payment."""
@@ -178,20 +145,6 @@ def test_pronoun_is_never_a_customer_name():
     assert r["buttons"] == [] and lg.balances("o") == {}  # asked again, nothing created
     r = b.handle("o", "Ramesh")
     assert r["buttons"] == ["yes", "no"]
-
-
-def test_sheet_note_column_and_layout_hook():
-    sh = FakeSheet()
-    calls = []
-    sh.ensure_layout = lambda: calls.append(1)
-    lg = Ledger()
-    m = SheetMirror(lg, sh, "shop", Clock())
-    m.boot()
-    assert calls == [1]
-    lg.add_entry("shop", "Ramesh", "credit", 100, note="bill: Gupta Store")
-    m.sync()
-    assert sh.rows[-1][8] == "bill: Gupta Store"
-
 
 
 def test_dues_command_splits_given_and_taken():
@@ -246,3 +199,25 @@ def test_old_bill_date_is_stated_and_today_redates_it():
     b.start_from_extraction("o", to_extraction(BillFields("SUNRISE ENTERPRISE", 100, "2025-01-10")), "bill")
     b.handle("o", "expense")
     assert "January 2025" in b.handle("o", "yes")["reply"]
+
+
+def test_export_matches_sheet_layout_with_expenses_inline():
+    lg = Ledger()
+    lg.add_entry("o", "Ramesh", "credit", 50000)
+    lg.add_expense("o", "electricity", 90050, note="meter 2", vendor="PSPCL")
+    wb = load_workbook(io.BytesIO(build_xlsx(lg, "o")))
+    assert wb.sheetnames == ["Khata", "Summary"]
+    rows = [dict(zip(render.COLUMNS, r)) for r in list(wb["Khata"].iter_rows(values_only=True))[1:]]
+    x = next(r for r in rows if r["Type"] == "Expense")
+    assert (x["Name"], x["Category"], x["Out (₹)"], x["Note"]) == ("PSPCL", "Electricity", 900.5, "meter 2")
+
+
+def test_bill_vendor_reaches_the_sheet_name_column():
+    lg, sh = Ledger(), FakeSheet()
+    b = Bot(lg)
+    b.start_from_extraction("o", to_extraction(SAMPLE_BILL), "bill")
+    b.handle("o", "expense"); b.handle("o", "yes")
+    SheetMirror(lg, sh, "o", Clock()).sync()
+    row = sh.khata()[0]
+    assert (row["Name"], row["Category"], row["Via"], row["Note"]) == ("Sharma Kirana Store", "Purchase",
+                                                                       "Bill photo", "")
