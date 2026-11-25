@@ -58,15 +58,15 @@ def test_export_round_trip(ops):
     assert data[:2] == b"PK"
 
     ws = load_workbook(io.BytesIO(data)).active
-    assert ws.title == "Khata"
+    assert ws.title == "Transactions"
     rows = list(ws.iter_rows(values_only=True))
     assert list(rows[0]) == HEADER
     body = rows[1:]
 
-    mine = expected[OWNER]
+    mine = {i: e for i, e in expected[OWNER].items() if e["status"] == "active"}
     C = {c: i for i, c in enumerate(HEADER)}
     ids = [int(r[C["Ref"]][2:]) for r in body]
-    assert sorted(ids) == sorted(mine)                    # one row per entry of this owner only
+    assert sorted(ids) == sorted(mine)                    # active entries of this owner only
     assert [r[C["Date"]] for r in body] == sorted(r[C["Date"]] for r in body)   # sorted by date
     other_ids = set(expected[OTHER])
     for r in body:
@@ -75,16 +75,14 @@ def test_export_round_trip(ops):
         e = mine[eid]
         assert r[C["Name"]] == e["customer"]
         assert r[C["Type"]] == ("Udhaar given" if e["kind"] == "credit" else "Payment received")
-        amount = r[C["Out (₹)"]] if e["kind"] == "credit" else r[C["In (₹)"]]
-        assert isinstance(e["paise"], int) and round(amount * 100) == e["paise"]
+        assert isinstance(e["paise"], int) and round(r[C["Amount (₹)"]] * 100) == e["paise"]
         assert r[C["Date"]] == e["date"]
         assert (r[C["Due"]] or None) == e["due"]
-        assert r[C["Status"]] == e["status"]
 
 
 def _rows(data: bytes) -> list[tuple]:
     ws = load_workbook(io.BytesIO(data)).active
-    assert ws.title == "Khata"
+    assert ws.title == "Transactions"
     return list(ws.iter_rows(values_only=True))
 
 
@@ -121,6 +119,6 @@ def test_api_export_serves_build_xlsx_for_demo_login():
     rows = _rows(r.content)
     assert rows == _rows(build_xlsx(lg, sid))
     assert list(rows[0]) == HEADER
-    assert sorted(row[0] for row in rows[1:]) == sorted(f"K-{e.id}" for e in entries)
+    assert sorted(row[0] for row in rows[1:]) == sorted(f"K-{e.id}" for e in entries if e.status == "active")
     assert "Stranger" not in {row[3] for row in rows[1:]}
-    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Khata", "Summary"]
+    assert load_workbook(io.BytesIO(r.content)).sheetnames == ["Transactions", "Dues"]

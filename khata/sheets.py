@@ -1,8 +1,9 @@
 """Google Sheet view of one shopkeeper's khata. SQLite stays the source of truth.
 
-The Khata tab and the Summary tab are redrawn from the database whenever anything changes
-(khata/render.py), so the sheet, the Excel export and the bot always agree: fixed columns,
-sorted by date, running balance per customer. Hand edits in the sheet are overwritten.
+The Transactions tab and the Dues tab are redrawn from the database whenever anything
+changes (khata/render.py), so the sheet, the Excel export and the bot always agree. Hand
+edits in the sheet are overwritten. Tabs from older layouts (Khata, Summary) are removed
+once the new ones are written.
 
 On free hosting the disk is wiped on restart, so on boot an empty database is rebuilt from the
 sheet (restore). Restore reads the current layout and both older ones. If restore fails, the
@@ -22,15 +23,18 @@ from typing import Protocol
 from . import render
 from .ledger import Ledger
 
-TAB, SUMMARY_TAB = "Khata", "Summary"
+TAB, DUES_TAB = render.TX_TAB, render.DUES_TAB
+LEGACY_TABS = ("Khata", "Summary")
 LAYOUT_V1 = ["entry_id", "date", "customer", "kind"]        # first columns of the oldest layout
 LAYOUT_V2 = ["id", "date", "type", "name"]                  # 9-column layout used briefly
+LAYOUT_V3 = ["ref", "date", "type", "name", "category"]     # 13-column layout used briefly
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 class SheetClient(Protocol):
     def read_tab(self, tab: str) -> list[list]: ...        # every row, header included
     def write_tab(self, tab: str, rows: list[list]) -> None: ...   # replace the tab's contents
+    def delete_tab(self, tab: str) -> None: ...
 
 
 class GoogleSheetClient:
@@ -73,6 +77,16 @@ class GoogleSheetClient:
                        json={"values": rows}, timeout=30).raise_for_status()
 
 
+    def delete_tab(self, tab: str) -> None:
+        meta = self.s.get(f"{self.API}/{self.id}", params={"fields": "sheets.properties(title,sheetId)"}, timeout=20)
+        meta.raise_for_status()
+        sheets = meta.json().get("sheets", [])
+        ids = {sh["properties"]["title"]: sh["properties"]["sheetId"] for sh in sheets}
+        if tab in ids and len(sheets) > 1:
+            self.s.post(f"{self.API}/{self.id}:batchUpdate", timeout=20, json={"requests": [
+                {"deleteSheet": {"sheetId": ids[tab]}}]}).raise_for_status()
+
+
 def _money(v) -> int:
     return round(float(str(v).replace(",", "").replace("₹", "")) * 100)
 
@@ -101,6 +115,21 @@ def _parse_v1(r: list) -> dict:
     return {"id": int(float(sid)), "kind": kind, "date": str(r[1])[:10], "name": str(r[2]).strip(), "category": "",
             "paise": _money(r[4]), "due": str(r[5])[:10] or None, "status": str(r[6]).strip() or "active",
             "note": note, "via": "sheet", "recorded": ""}
+
+
+def _parse_v3(r: list) -> dict:
+    # Ref, Date, Type, Name, Category, Out, In, Balance after, Due, Status, Via, Note, Recorded on
+    r = list(r) + [""] * 13
+    ref = str(r[0]).strip().upper()
+    kind = {"udhaar given": "credit", "payment received": "payment", "expense": "expense"}.get(str(r[2]).strip().lower())
+    if kind is None or ref[:2] not in ("K-", "E-"):
+        raise ValueError(ref)
+    cat = str(r[4]).strip().lower()
+    return {"id": int(ref[2:]), "kind": kind, "date": str(r[1])[:10], "name": str(r[3]).strip(),
+            "category": render.CATEGORY_OF_LABEL.get(cat, cat),
+            "paise": _money(r[6] if kind == "payment" else r[5]), "due": str(r[8])[:10] or None,
+            "status": str(r[9]).strip() or "active", "note": str(r[11]),
+            "via": render.VIA_OF_LABEL.get(str(r[10]).strip().lower(), "sheet"), "recorded": str(r[12])[:10]}
 
 
 class SheetMirror:
@@ -133,13 +162,15 @@ class SheetMirror:
             if (self.ledger.db.execute("SELECT 1 FROM entries LIMIT 1").fetchone()
                     or self.ledger.db.execute("SELECT 1 FROM expenses LIMIT 1").fetchone()):
                 return {"restored": 0, "skipped": 0, "reason": "database not empty"}
-        rows = self.client.read_tab(TAB)
+        rows = self.client.read_tab(TAB) or self.client.read_tab("Khata")
         if not rows:
             return {"restored": 0, "skipped": 0, "reason": "new sheet"}
         head = [str(c).strip() for c in rows[0]]
         low = [c.lower() for c in head]
         if head[:len(render.COLUMNS)] == render.COLUMNS:
             parse = render.parse_row
+        elif low[:5] == LAYOUT_V3:
+            parse = _parse_v3
         elif low[:4] == LAYOUT_V2:
             parse = _parse_v2
         elif low[:4] == LAYOUT_V1 or low[:1] == ["entry_id"]:
@@ -184,10 +215,10 @@ class SheetMirror:
 
     # ---- redraw ------------------------------------------------------------------------
     def _views(self) -> tuple[list[list], list[list], str]:
-        khata = [render.COLUMNS] + render.ledger_rows(self.ledger, self.owner)
-        summary = render.summary_rows(self.ledger, self.owner)
-        fp = hashlib.sha256(json.dumps([khata, summary], ensure_ascii=False, default=str).encode()).hexdigest()
-        return khata, summary, fp
+        tx = [render.COLUMNS] + render.transaction_rows(self.ledger, self.owner)
+        dues = render.dues_rows(self.ledger, self.owner)
+        fp = hashlib.sha256(json.dumps([tx, dues], ensure_ascii=False, default=str).encode()).hexdigest()
+        return tx, dues, fp
 
     def pending(self) -> int:
         """1 if the sheet is behind the database, else 0."""
@@ -204,7 +235,12 @@ class SheetMirror:
             return {"synced": 0, "failed": 0, "pending": 1}
         try:
             self.client.write_tab(TAB, khata)
-            self.client.write_tab(SUMMARY_TAB, summary)
+            self.client.write_tab(DUES_TAB, summary)
+            for old in LEGACY_TABS:              # new tabs written: the old layout can go
+                try:
+                    self.client.delete_tab(old)
+                except Exception:
+                    pass
         except Exception:                                    # retry later with backoff
             self._fails += 1
             self._next_at = now + min(300, 2 ** self._fails)
