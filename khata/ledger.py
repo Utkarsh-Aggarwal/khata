@@ -30,6 +30,13 @@ CREATE TABLE IF NOT EXISTS expenses(
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','cancelled')),
   source TEXT DEFAULT 'text', created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_expenses_owner ON expenses(owner, entry_date);
+CREATE TABLE IF NOT EXISTS prices(
+  owner TEXT NOT NULL, key TEXT NOT NULL, name TEXT NOT NULL, rate INTEGER NOT NULL CHECK(rate > 0),
+  unit TEXT DEFAULT '', updated_at TEXT NOT NULL, PRIMARY KEY(owner, key));
+CREATE TABLE IF NOT EXISTS bills(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, customer TEXT, items TEXT NOT NULL,
+  total INTEGER NOT NULL, payment TEXT NOT NULL CHECK(payment IN ('cash','udhaar')),
+  bill_date TEXT NOT NULL, created_at TEXT NOT NULL);
 """
 
 
@@ -59,6 +66,7 @@ class Expense:
     entry_date: str
     status: str
     vendor: str = ""
+    direction: str = "out"           # "out" = shop expense, "in" = money received (cash sale...)
     kind: str = "expense"
 
 
@@ -88,6 +96,8 @@ class Ledger:
             xcols = {r["name"] for r in self.db.execute("PRAGMA table_info(expenses)")}
             if "vendor" not in xcols:                  # who was paid: shop name on a bill, staff name
                 self.db.execute("ALTER TABLE expenses ADD COLUMN vendor TEXT DEFAULT ''")
+            if "direction" not in xcols:               # 'out' = expense, 'in' = money received (sale...)
+                self.db.execute("ALTER TABLE expenses ADD COLUMN direction TEXT NOT NULL DEFAULT 'out'")
             # Expenses saved before the vendor column kept the shop name in the note as "bill: <shop>".
             self.db.execute("UPDATE expenses SET vendor=TRIM(SUBSTR(note, 7)), note='bill photo' "
                             "WHERE (vendor IS NULL OR vendor='') AND note LIKE 'bill: %'")
@@ -217,23 +227,26 @@ class Ledger:
 
     # ---- shop expenses ----------------------------------------------
     def add_expense(self, owner: str, category: str, paise: int, *, note: str = "", vendor: str = "",
-                    entry_date: str | None = None, source: str = "text") -> int:
+                    entry_date: str | None = None, source: str = "text", direction: str = "out") -> int:
+        """A normal ledger entry: money out (expense) or in (sale...). No person's balance changes."""
+        if direction not in ("in", "out"):
+            raise LedgerError("direction must be in or out")
         if not isinstance(paise, int) or isinstance(paise, bool) or paise <= 0:
             raise LedgerError("amount must be positive integer paise")
         category = (category or "other").strip()[:40] or "other"
         with self.lock:
             cur = self.db.execute(
-                "INSERT INTO expenses(owner,category,paise,note,vendor,entry_date,source,created_at) "
-                "VALUES(?,?,?,?,?,?,?,?)",
+                "INSERT INTO expenses(owner,category,paise,note,vendor,entry_date,source,created_at,direction) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
                 (owner, category, paise, note, (vendor or "").strip()[:60], entry_date or date.today().isoformat(),
-                 source, datetime.now(timezone.utc).isoformat()))
+                 source, datetime.now(timezone.utc).isoformat(), direction))
             self._commit()
             return cur.lastrowid
 
     @staticmethod
     def _expense(r) -> Expense:
         return Expense(r["id"], r["category"], r["paise"], r["note"], r["entry_date"], r["status"],
-                       r["vendor"] or "")
+                       r["vendor"] or "", r["direction"] or "out")
 
     def get_expense(self, owner: str, expense_id: int) -> Expense | None:
         with self.lock:
@@ -241,8 +254,11 @@ class Ledger:
         return self._expense(r) if r else None
 
     def expenses(self, owner: str, *, since: str | None = None, until: str | None = None,
-                 include_cancelled: bool = False) -> list[Expense]:
+                 include_cancelled: bool = False, direction: str | None = None) -> list[Expense]:
         q, args = "SELECT * FROM expenses WHERE owner=?", [owner]
+        if direction:
+            q += " AND direction=?"
+            args.append(direction)
         if since:
             q += " AND entry_date>=?"
             args.append(since)
@@ -257,7 +273,7 @@ class Ledger:
     def expense_totals(self, owner: str, since: str | None = None) -> dict[str, int]:
         """Active expenses per category since a date, largest first."""
         out: dict[str, int] = {}
-        for x in self.expenses(owner, since=since):
+        for x in self.expenses(owner, since=since, direction="out"):
             out[x.category] = out.get(x.category, 0) + x.paise
         return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
@@ -333,9 +349,41 @@ class Ledger:
                 self.delete_owner_data(o)
             return len(old)
 
+    # ---- price list and bills ---------------------------------------
+    def set_price(self, owner: str, name: str, rate: int, unit: str = "") -> None:
+        k = name_key(name)
+        if not k or not isinstance(rate, int) or rate <= 0:
+            return
+        with self.lock:
+            self.db.execute("INSERT INTO prices(owner,key,name,rate,unit,updated_at) VALUES(?,?,?,?,?,?) "
+                            "ON CONFLICT(owner,key) DO UPDATE SET rate=excluded.rate, unit=excluded.unit, "
+                            "name=excluded.name, updated_at=excluded.updated_at",
+                            (owner, k, name.strip()[:30], rate, unit, datetime.now(timezone.utc).isoformat()))
+            self.db.commit()                       # not money: the sheet need not redraw
+
+    def price(self, owner: str, name: str) -> int | None:
+        with self.lock:
+            r = self.db.execute("SELECT rate FROM prices WHERE owner=? AND key=?", (owner, name_key(name))).fetchone()
+        return r["rate"] if r else None
+
+    def prices(self, owner: str) -> list[tuple[str, int, str]]:
+        with self.lock:
+            rows = self.db.execute("SELECT name, rate, unit FROM prices WHERE owner=? ORDER BY name", (owner,))
+            return [(r["name"], r["rate"], r["unit"]) for r in rows]
+
+    def add_bill(self, owner: str, customer: str | None, items: list[dict], total: int, payment: str) -> int:
+        import json
+        with self.lock:
+            cur = self.db.execute(
+                "INSERT INTO bills(owner,customer,items,total,payment,bill_date,created_at) VALUES(?,?,?,?,?,?,?)",
+                (owner, customer, json.dumps(items, ensure_ascii=False), total, payment,
+                 date.today().isoformat(), datetime.now(timezone.utc).isoformat()))
+            self.db.commit()
+            return cur.lastrowid
+
     # ---- privacy ---------------------------------------------------
     def delete_owner_data(self, owner: str) -> None:
         with self.lock:
-            for t in ("entries", "expenses", "aliases", "customers"):
+            for t in ("entries", "expenses", "aliases", "customers", "prices", "bills"):
                 self.db.execute(f"DELETE FROM {t} WHERE owner=?", (owner,))
             self._commit()

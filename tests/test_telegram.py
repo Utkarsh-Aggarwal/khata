@@ -1453,6 +1453,10 @@ def test_app_wiring_polling_is_off_in_tests_and_full_flow(monkeypatch):
 
     tg = app.state.telegram
     tg.handle_update(text_update(1, "Ramesh ko 500 udhaar"))
+    assert api.sent()[-1][2] == ["mode:bill", "mode:entry", "mode:udhaar"]     # pick a mode first
+    tg.handle_update({"update_id": 90, "callback_query": {
+        "id": "m", "data": "mode:udhaar", "message": {"message_id": tg.keyboards[CHAT],
+                                                      "chat": {"id": CHAT, "type": "private"}}}})
     mid = tg.keyboards[CHAT]
     tg.handle_update({"update_id": 2, "callback_query": {
         "id": "q", "data": "yes", "message": {"message_id": mid, "chat": {"id": CHAT, "type": "private"}}}})

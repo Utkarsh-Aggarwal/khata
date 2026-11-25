@@ -217,6 +217,7 @@ class Extraction:
     vendor: str = ""                   # add_expense: who was paid (shop on a bill, staff for salary)
     period: str = "month"              # expense_report: "today" or "month"
     maybe_expense: bool = False        # "maine bill bhara" or a bill photo: a person's, or the shop's?
+    direction: str = "out"             # add_expense: "out" (expense) / "in" (money received) / "" (ask)
 
 
 def detect_lang(text: str) -> str:

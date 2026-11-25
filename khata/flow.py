@@ -5,11 +5,19 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
-from .extract import Extraction, extract, parse_amount
+from . import billing
+from .extract import CATEGORY_OF, Extraction, extract, parse_amount
 from .ledger import Ledger, format_rupees
 from .names import name_key
 from .reminders import ghosts, normalize_phone
 
+MODE_IDS = {"mode:bill": "bill", "mode:entry": "entry", "mode:udhaar": "udhaar"}
+IN_W = {"bikri", "bikree", "sale", "sales", "sold", "becha", "bechi", "beche", "mila", "mile", "aaya", "aaye", "aya",
+        "received", "income", "in", "jama", "बिक्री", "बेचा", "मिला", "मिले", "आया", "आए", "जमा", "ਵਿਕਰੀ", "ਮਿਲੇ"}
+SALE_W = {"bikri", "bikree", "sale", "sales", "sold", "becha", "bechi", "beche", "बिक्री", "बेचा", "ਵਿਕਰੀ"}
+OUT_W = {"kharcha", "kharch", "kharche", "expense", "spent", "paid", "bhara", "bhare", "diya", "diye", "out",
+         "khareeda", "kharida", "kharide", "खर्च", "खर्चा", "भरा", "दिया", "दिए", "खरीदा", "ਖਰਚਾ"}
+RATES_W = {"rates", "/rates", "rate list", "price list", "prices", "daam", "भाव", "रेट"}
 MAX_ENTRY_PAISE = 10**7 * 100     # ₹1 crore: larger single entries are almost surely misreads
 PHONE_W = {"number", "nambar", "numbar", "phone", "mobile", "whatsapp", "नंबर", "नम्बर", "फोन", "ਨੰਬਰ", "ਫੋਨ"}
 PHONE_FILLER = {"ka", "ki", "ke", "is", "hai", "my", "of", "का", "की", "है", "ਦਾ", "ਦੀ", "ਹੈ", "no", "no."}
@@ -44,6 +52,7 @@ CATEGORY_NAME = {
     "stock": ("Stock", "माल", "ਮਾਲ"), "phone": ("Phone/internet", "फ़ोन/इंटरनेट", "ਫ਼ੋਨ/ਇੰਟਰਨੈੱਟ"),
     "water": ("Water", "पानी", "ਪਾਣੀ"), "gas": ("Gas", "गैस", "ਗੈਸ"), "tea": ("Tea/snacks", "चाय-नाश्ता", "ਚਾਹ"),
     "repair": ("Repair", "मरम्मत", "ਮੁਰੰਮਤ"), "purchase": ("Purchase", "खरीद", "ਖਰੀਦ"),
+    "sale": ("Sale", "बिक्री", "ਵਿਕਰੀ"),
     "other": ("Other", "अन्य", "ਹੋਰ"),
 }
 DOUBT_PHRASES = ("kya matlab", "matlab kya", "samajh nahi", "samjh nahi", "what does", "what is credit",
@@ -106,6 +115,43 @@ M = {
                               "जुड़ता है, किसी ग्राहक का हिसाब नहीं बदलता।",
                         "pa": "🧾 ਦੁਕਾਨ ਦਾ ਖਰਚਾ = ਦੁਕਾਨ ਦੀ ਆਪਣੀ ਲਾਗਤ। ਇਹ ਮਹੀਨੇ ਦੇ ਖਰਚੇ ਵਿੱਚ ਜੁੜਦਾ ਹੈ, ਕਿਸੇ ਗਾਹਕ ਦਾ "
                               "ਹਿਸਾਬ ਨਹੀਂ ਬਦਲਦਾ।"},
+    "choose_mode": {"en": "What is this?\n🧾 Bill: make a bill for a customer (items, qty, rate)\n"
+                          "📒 Entry: record money in or out (sale, expense, purchase)\n"
+                          "🤝 Udhaar: credit given or taken, and money returned",
+                    "hi": "यह क्या है?\n🧾 बिल: ग्राहक का बिल बनाएँ (सामान, मात्रा, रेट)\n"
+                          "📒 एंट्री: पैसे आए या गए (बिक्री, खर्च, खरीद)\n🤝 उधार: उधार दिया या लिया, और वापसी",
+                    "pa": "ਇਹ ਕੀ ਹੈ?\n🧾 ਬਿੱਲ: ਗਾਹਕ ਦਾ ਬਿੱਲ ਬਣਾਓ\n📒 ਐਂਟਰੀ: ਪੈਸੇ ਆਏ ਜਾਂ ਗਏ\n🤝 ਉਧਾਰ: ਉਧਾਰ ਦਿੱਤਾ ਜਾਂ ਲਿਆ, ਅਤੇ ਵਾਪਸੀ"},
+    "ask_direction": {"en": "Did this {amt} come in or go out?", "hi": "ये {amt} आए या गए?",
+                      "pa": "ਇਹ {amt} ਆਏ ਜਾਂ ਗਏ?"},
+    "confirm_entry_in": {"en": "Save: 📥 money in {amt} ({cat}){note}? No one's balance changes. Reply yes / no, "
+                               "or send a new amount.",
+                         "hi": "सेव करूँ: 📥 पैसे आए {amt} ({cat}){note}? किसी का हिसाब नहीं बदलेगा। हाँ / नहीं, "
+                               "या नई रकम भेजें।",
+                         "pa": "ਸੇਵ ਕਰਾਂ: 📥 ਪੈਸੇ ਆਏ {amt} ({cat}){note}? ਕਿਸੇ ਦਾ ਹਿਸਾਬ ਨਹੀਂ ਬਦਲੇਗਾ। ਹਾਂ / ਨਹੀਂ।"},
+    "saved_entry_in": {"en": "Saved 📥 {cat} {amt}.", "hi": "सेव हो गया 📥 {cat} {amt}।",
+                       "pa": "ਸੇਵ ਹੋ ਗਿਆ 📥 {cat} {amt}।"},
+    "bill_pay": {"en": "Cash or udhaar?", "hi": "नकद या उधार?", "pa": "ਨਕਦ ਜਾਂ ਉਧਾਰ?"},
+    "bill_who": {"en": "Whose udhaar is this bill? Send the customer's name.",
+                 "hi": "यह बिल किसके उधार में लिखूँ? ग्राहक का नाम भेजें।",
+                 "pa": "ਇਹ ਬਿੱਲ ਕਿਸਦੇ ਉਧਾਰ ਵਿੱਚ ਲਿਖਾਂ? ਗਾਹਕ ਦਾ ਨਾਮ ਭੇਜੋ।"},
+    "bill_rate": {"en": "What is the rate for {name}? Send e.g. '{name} 45'.",
+                  "hi": "{name} का रेट क्या है? जैसे '{name} 45' भेजें।", "pa": "{name} ਦਾ ਰੇਟ ਕੀ ਹੈ? ਜਿਵੇਂ '{name} 45'।"},
+    "bill_empty": {"en": "Add items first, e.g. atta 2 kg 45.", "hi": "पहले सामान लिखें, जैसे atta 2 kg 45।",
+                   "pa": "ਪਹਿਲਾਂ ਸਮਾਨ ਲਿਖੋ, ਜਿਵੇਂ atta 2 kg 45।"},
+    "bill_cash": {"en": "✅ Bill No. {no} saved: cash sale {amt}. The PDF is below.",
+                  "hi": "✅ बिल नंबर {no} सेव: नकद बिक्री {amt}। PDF नीचे है।",
+                  "pa": "✅ ਬਿੱਲ ਨੰਬਰ {no} ਸੇਵ: ਨਕਦ ਵਿਕਰੀ {amt}। PDF ਹੇਠਾਂ ਹੈ।"},
+    "bill_udhaar": {"en": "✅ Bill No. {no} saved as udhaar: {amt}. Now {after}. The PDF is below.",
+                    "hi": "✅ बिल नंबर {no} उधार में सेव: {amt}। अब {after}। PDF नीचे है।",
+                    "pa": "✅ ਬਿੱਲ ਨੰਬਰ {no} ਉਧਾਰ ਵਿੱਚ ਸੇਵ: {amt}। ਹੁਣ {after}। PDF ਹੇਠਾਂ ਹੈ।"},
+    "bill_cancelled": {"en": "Bill cancelled. Nothing saved.", "hi": "बिल रद्द। कुछ सेव नहीं हुआ।",
+                       "pa": "ਬਿੱਲ ਰੱਦ। ਕੁਝ ਸੇਵ ਨਹੀਂ ਹੋਇਆ।"},
+    "rates": {"en": "🏷️ Your rates (they fill bills automatically):", "hi": "🏷️ आपके रेट (बिल में अपने आप भरते हैं):",
+              "pa": "🏷️ ਤੁਹਾਡੇ ਰੇਟ:"},
+    "no_rates": {"en": "No rates saved yet. They are remembered from your bills, or send 'rate atta 45'.",
+                 "hi": "अभी कोई रेट सेव नहीं। बिल से अपने आप याद होते हैं, या 'rate atta 45' भेजें।",
+                 "pa": "ਹਾਲੇ ਕੋਈ ਰੇਟ ਨਹੀਂ। 'rate atta 45' ਭੇਜੋ।"},
+    "rate_saved": {"en": "🏷️ Rate saved: {name} {amt}.", "hi": "🏷️ रेट सेव: {name} {amt}।", "pa": "🏷️ ਰੇਟ ਸੇਵ: {name} {amt}।"},
     "now_label": {"en": "Right now: ", "hi": "अभी: ", "pa": "ਹੁਣ: "},
     "owes_you": {"en": "{name} owes you {amt}", "hi": "{name} पर {amt} बाकी", "pa": "{name} ਤੇ {amt} ਬਾਕੀ"},
     "you_owe": {"en": "you owe {name} {amt}", "hi": "आपको {name} को {amt} देने हैं",
@@ -188,6 +234,10 @@ class Bot:
     ledger: Ledger
     pending: dict[str, Pending] = field(default_factory=dict)
     base_url: str = ""
+    # Owners (by id prefix, e.g. "tg-") who pick a mode for each new record: Bill, Entry or Udhaar.
+    mode_prefixes: tuple = ()
+    drafts: dict = field(default_factory=dict)          # owner -> billing.Draft
+    waiting_mode: dict = field(default_factory=dict)    # owner -> (text, BillFields | None, source, lang)
 
     def say(self, key: str, lang: str, **kw) -> str:
         return M[key][L(lang)].format(**kw)
@@ -202,6 +252,17 @@ class Bot:
             phone_cmd = self._phone_command(owner, text)
             if phone_cmd:
                 return phone_cmd
+            if owner in self.drafts:
+                r = self._bill_step(owner, text, source)
+                if r is not None:
+                    return r
+            w = self.waiting_mode.pop(owner, None)
+            if w:
+                if text in MODE_IDS:
+                    return self._choose_mode(owner, MODE_IDS[text], *w)
+                if self._is_doubt(text):
+                    self.waiting_mode[owner] = w
+                    return self._mode_prompt(w[3])
             p = self.pending.get(owner)
             if p and self._is_doubt(text):
                 return self._explain(owner, p)        # answer the question, keep the entry waiting
@@ -219,6 +280,13 @@ class Bot:
     # ------------------------------------------------------------
     def _fresh(self, owner, text, source, today):
         low = text.lower().strip()
+        if low in ("bill", "/bill", "बिल", "ਬਿੱਲ"):
+            self.drafts[owner] = billing.Draft(lang=extract(text).lang)
+            return self._bill_view(owner)
+        if low in RATES_W:
+            return self._rates(owner, extract(text).lang)
+        if low.startswith("rate ") and parse_amount(text)[0]:
+            return self._set_rate(owner, text)
         if set(low.replace("/", " ").split()) & REMIND_W:
             return self._remind(owner, extract(text).lang)
         if low in DUES_W:
@@ -240,7 +308,8 @@ class Bot:
             e = self.ledger.undo_last(owner)
             if not e:
                 return self._r(self.say("nothing_undo", lang))
-            what = (f"🧾 {self._cat(lang, e.category)} {format_rupees(e.paise)}" if e.kind == "expense"
+            what = (f"{'📥' if getattr(e, 'direction', 'out') == 'in' else '🧾'} {self._cat(lang, e.category)} "
+                    f"{format_rupees(e.paise)}" if e.kind == "expense"
                     else f"{e.customer} {format_rupees(e.paise)} ({e.kind})")
             return self._r(self.say("undone", lang, what=what), changed=True)
         if ex.intent == "expense_report":
@@ -256,6 +325,9 @@ class Bot:
                     return self._r(self.say("balance", lang,
                                             after=self._after(lang, real, self.ledger.balance(owner, real))))
             return self._r(self._dues(owner, lang))
+        if self._modes(owner):                       # no guessing: the shopkeeper picks the mode
+            self.waiting_mode[owner] = (text, None, source, lang)
+            return self._mode_prompt(lang)
         if ex.intent in ("add_credit", "add_payment", "add_unknown", "add_expense"):
             if ex.customer:
                 real = self.ledger.find_customer(owner, ex.customer)
@@ -297,6 +369,164 @@ class Bot:
             lines.append(f"👻 {g.name} {format_rupees(g.paise)}{late}: {g.wa}")
         return self._r("\n".join(lines))
 
+    # ---- modes: Bill / Entry / Udhaar ----------------------------------------------------
+    def _modes(self, owner: str) -> bool:
+        return bool(self.mode_prefixes) and owner.startswith(tuple(self.mode_prefixes))
+
+    def _mode_prompt(self, lang: str) -> dict:
+        return self._r(self.say("choose_mode", lang), buttons=list(MODE_IDS))
+
+    def start_from_bill(self, owner: str, f, intro_text: str) -> dict:
+        """A bill photo. With modes on, the shopkeeper picks what it is; else the old udhaar flow."""
+        from .bills import to_extraction
+        if not self._modes(owner):
+            r = self.start_from_extraction(owner, to_extraction(f), "bill")
+            return {**r, "reply": intro_text + "\n" + r["reply"]}
+        self.pending.pop(owner, None)
+        self.drafts.pop(owner, None)
+        self.waiting_mode[owner] = (None, f, "bill", "en")
+        r = self._mode_prompt("en")
+        return {**r, "reply": intro_text + "\n\n" + r["reply"]}
+
+    def _choose_mode(self, owner: str, mode: str, text, bill, source: str, lang: str) -> dict:
+        from .bills import items_note, to_extraction
+        self.pending.pop(owner, None)
+        if mode == "bill":
+            d = billing.Draft(lang=lang)
+            if bill:
+                for it in bill.items:
+                    line = billing.parse_line(f"{it.name} {it.qty}") or billing.Line(it.name)
+                    line.name = it.name
+                    if it.rate and line.unit not in billing.AMOUNT_UNITS:
+                        line.rate, line.total = it.rate, None
+                    elif it.amount:
+                        line.rate, line.total = None, it.amount
+                    d.lines.append(line)
+            if text:
+                billing.apply(d, text, lambda nm: self.ledger.price(owner, nm))
+            self.drafts[owner] = d
+            return self._bill_view(owner)
+        if mode == "entry":
+            if bill:
+                ex = Extraction("add_expense", paise=bill.paise, category="purchase", vendor=bill.vendor or "",
+                                note=items_note(bill), entry_date=bill.bill_date, lang=lang, direction="out")
+            else:
+                ex = self._entry_extraction(text)
+            p = Pending(ex, source)
+            self.pending[owner] = p
+            return self._advance(owner, p)
+        # udhaar
+        if bill:
+            ex = to_extraction(bill)
+            ex.maybe_expense = False
+        else:
+            ex = extract(text)
+            if ex.intent not in ("add_credit", "add_payment", "add_unknown"):
+                paise = ex.paise if ex.paise is not None else parse_amount(text)[0]
+                ex = Extraction("add_unknown", customer=ex.customer if ex.intent != "add_expense" else (ex.vendor or None),
+                                paise=paise, lang=ex.lang)
+            if ex.customer:
+                ex.customer = self.ledger.find_customer(owner, ex.customer) or ex.customer
+        return self.start_from_extraction(owner, ex, source)
+
+    def _entry_extraction(self, text: str) -> Extraction:
+        """Entry mode: money in or out of the shop, no person's balance involved."""
+        ex = extract(text)
+        paise = ex.paise if ex.paise is not None else parse_amount(text)[0]
+        words = set(text.lower().replace(",", " ").split())
+        cats = [CATEGORY_OF[w] for w in text.lower().split() if w in CATEGORY_OF]
+        if words & IN_W:
+            direction, cat = "in", ("sale" if words & SALE_W else "other")
+        elif words & OUT_W or cats or ex.intent == "add_expense":
+            direction, cat = "out", (ex.category if ex.intent == "add_expense" else (cats[0] if cats else "other"))
+        else:
+            direction, cat = "", "other"
+        vendor = ex.vendor if ex.intent == "add_expense" else (ex.customer or "")
+        note = " ".join(w for w in text.split() if not any(ch.isdigit() for ch in w))[:60]
+        return Extraction("add_expense", paise=paise, category=cat, vendor=vendor or "", note=note,
+                          entry_date=ex.entry_date if ex.intent == "add_expense" else None, lang=ex.lang,
+                          direction=direction)
+
+    # ---- bill generator ------------------------------------------------------------------
+    def _bill_view(self, owner: str, extra: str = "") -> dict:
+        d = self.drafts[owner]
+        text = billing.render_text(d) + (("\n" + extra) if extra else "")
+        return self._r(text, buttons=["bill:done", "bill:cancel"])
+
+    def _bill_step(self, owner: str, text: str, source: str) -> dict | None:
+        d = self.drafts[owner]
+        low = text.lower().strip().rstrip(".!।")
+        lang = d.lang
+        if low in billing.CANCEL_W or (low in NO and d.stage != "customer"):
+            del self.drafts[owner]
+            return self._r(self.say("bill_cancelled", lang))
+        if d.stage == "customer":
+            if set(low.split()) <= NOT_A_NAME or not name_key(text):
+                return self._r(self.say("bill_who", lang))
+            name = self.ledger.find_customer(owner, " ".join(text.split())[:40]) or " ".join(text.split())[:40].title()
+            return self._finish_bill(owner, name, "udhaar", source)
+        if d.stage == "payment":
+            if low in ("pay:cash", "cash", "nakad", "naqad", "नकद", "ਨਕਦ"):
+                return self._finish_bill(owner, None, "cash", source)
+            if low in ("pay:udhaar", "udhaar", "udhar", "उधार", "ਉਧਾਰ", "credit"):
+                d.stage = "customer"
+                return self._r(self.say("bill_who", lang))
+            d.stage = "editing"                      # anything else: back to editing
+        if low in billing.DONE_W:
+            if not d.lines:
+                return self._bill_view(owner, self.say("bill_empty", lang))
+            miss = d.missing_rates()
+            if miss:
+                return self._bill_view(owner, self.say("bill_rate", lang, name=miss[0].name))
+            d.stage = "payment"
+            return self._r(billing.render_text(d, "🧾 Bill") + "\n\n" + self.say("bill_pay", lang),
+                           buttons=["pay:cash", "pay:udhaar", "bill:cancel"])
+        if self._is_command(text):
+            return None                              # e.g. /dues while drafting: answer it, keep the draft
+        before = [(l.name, l.qty, l.unit, l.rate, l.total) for l in d.lines]
+        billing.apply(d, text, lambda nm: self.ledger.price(owner, nm))
+        if before == [(l.name, l.qty, l.unit, l.rate, l.total) for l in d.lines]:
+            return self._bill_view(owner, "(I didn't find an item in that. Try: atta 2 kg 45)")
+        return self._bill_view(owner)
+
+    def _is_command(self, text: str) -> bool:
+        low = text.lower().strip()
+        if low in DUES_W or low in TODAY_W or low in RATES_W or set(low.replace("/", " ").split()) & REMIND_W:
+            return True
+        return extract(text).intent in ("help", "undo", "list", "balance", "expense_report")
+
+    def _finish_bill(self, owner: str, customer: str | None, payment: str, source: str) -> dict:
+        d = self.drafts.pop(owner)
+        items = [{"name": l.name, "qty": l.qty_text(), "rate": l.rate, "amount": l.amount} for l in d.lines]
+        for l in d.lines:                            # remember rates for next time
+            if l.rate:
+                self.ledger.set_price(owner, l.name, l.rate, l.unit)
+        no = self.ledger.add_bill(owner, customer, items, d.total, payment)
+        note = f"Bill {no}: " + "; ".join(f"{l.name} {l.qty_text()} {format_rupees(l.amount)}" for l in d.lines)
+        note = note if len(note) <= 190 else note[:187] + "..."
+        pdf = billing.build_pdf(d, bill_no=no, customer=customer, payment=payment)
+        extra = {"pdf": pdf, "pdf_name": f"bill-{no}.pdf", "changed": True, "bill_no": no}
+        if payment == "cash":
+            self.ledger.add_expense(owner, "sale", d.total, note=note, direction="in", source="bill")
+            return self._r(self.say("bill_cash", d.lang, no=no, amt=format_rupees(d.total)), **extra)
+        self.ledger.add_entry(owner, customer, "credit", d.total, note=note, source="bill")
+        after = self._after(d.lang, customer, self.ledger.balance(owner, customer))
+        return self._r(self.say("bill_udhaar", d.lang, no=no, amt=format_rupees(d.total), after=after), **extra)
+
+    def _rates(self, owner: str, lang: str) -> dict:
+        rs = self.ledger.prices(owner)
+        if not rs:
+            return self._r(self.say("no_rates", lang))
+        return self._r("\n".join([self.say("rates", lang)] +
+                                  [f"• {n}: {format_rupees(r)}" + (f" / {u}" if u else "") for n, r, u in rs]))
+
+    def _set_rate(self, owner: str, text: str) -> dict:
+        line = billing.parse_line(text[5:])
+        if not line or not line.rate:
+            return self._r(self.say("no_rates", "en"))
+        self.ledger.set_price(owner, line.name, line.rate, line.unit)
+        return self._r(self.say("rate_saved", extract(text).lang, name=line.name, amt=format_rupees(line.rate)))
+
     def start_from_extraction(self, owner: str, ex: Extraction, source: str) -> dict:
         """Used by voice/bill adapters: always routes through the same confirm step."""
         if ex.customer:
@@ -316,7 +546,7 @@ class Bot:
 
     def _today_report(self, owner: str, lang: str) -> str:
         today = date.today().isoformat()
-        xs = self.ledger.expenses(owner, since=today, until=today)
+        xs = self.ledger.expenses(owner, since=today, until=today, direction="out")
         if not xs:
             return self.say("no_expenses_today", lang)
         lines = [self.say("today_report", lang, total=format_rupees(sum(x.paise for x in xs)))]
@@ -400,8 +630,14 @@ class Bot:
                 return self._r(self.say("too_big", lang) + " " + self.say("ask_amount", lang))
             if ex.paise is None:
                 p.awaiting = "amount"; return self._r(self.say("ask_amount", lang))
+            if not ex.direction:
+                p.awaiting = "direction"
+                return self._r(self.say("ask_direction", lang, amt=format_rupees(ex.paise)), buttons=["dir:in", "dir:out"])
             p.awaiting = "confirm"
             note = f": {ex.vendor}" if ex.vendor else ""
+            if ex.direction == "in":
+                return self._r(self.say("confirm_entry_in", lang, amt=format_rupees(ex.paise),
+                                        cat=self._cat(lang, ex.category), note=note), buttons=["yes", "no"], pending=True)
             if not self._this_month(ex.entry_date):        # e.g. an old bill photographed now
                 return self._r(self.say("confirm_expense_dated", lang, amt=format_rupees(ex.paise),
                                         cat=self._cat(lang, ex.category), note=note, date=ex.entry_date,
@@ -470,11 +706,26 @@ class Bot:
             else:
                 return self._ask_kind(lang, ex)
             return self._advance(owner, p)
+        if p.awaiting == "direction":
+            w = set(low.split())
+            if low == "dir:in" or w & IN_W:
+                ex.direction = "in"
+                if ex.category not in ("sale", "other"):
+                    ex.category = "other"
+            elif low == "dir:out" or w & OUT_W:
+                ex.direction = "out"
+            else:
+                return self._advance(owner, p)
+            return self._advance(owner, p)
         # confirm stage
         if low in YES and ex.intent == "add_expense":
             x_id = self.ledger.add_expense(owner, ex.category or "other", ex.paise, note=ex.note,
-                                           vendor=ex.vendor, entry_date=ex.entry_date, source=p.source)
+                                           vendor=ex.vendor, entry_date=ex.entry_date, source=p.source,
+                                           direction=ex.direction or "out")
             del self.pending[owner]
+            if ex.direction == "in":
+                return self._r(self.say("saved_entry_in", lang, cat=self._cat(lang, ex.category),
+                                        amt=format_rupees(ex.paise)), changed=True, expense_id=x_id)
             if not self._this_month(ex.entry_date):
                 return self._r(self.say("saved_expense_dated", lang, cat=self._cat(lang, ex.category),
                                         amt=format_rupees(ex.paise), date=ex.entry_date,

@@ -33,7 +33,11 @@ FILE_MAX = 10 * 1024 * 1024
 ALLOWED_UPDATES = ["message", "callback_query"]
 BUTTON_TITLES = {"yes": "✅ Yes / हाँ", "no": "❌ No / नहीं",
                  "credit": "📤 I gave / मैंने दिए", "payment": "📥 They gave / उन्होंने दिए",
-                 "?": "❓ Explain / समझाओ", "expense": "🧾 Shop expense / दुकान खर्च"}
+                 "?": "❓ Explain / समझाओ", "expense": "🧾 Shop expense / दुकान खर्च",
+                 "mode:bill": "🧾 Bill / बिल", "mode:entry": "📒 Entry / एंट्री", "mode:udhaar": "🤝 Udhaar / उधार",
+                 "bill:done": "✅ Done / हो गया", "bill:cancel": "❌ Cancel / रद्द",
+                 "pay:cash": "💵 Cash / नकद", "pay:udhaar": "🤝 Udhaar / उधार",
+                 "dir:in": "📥 Came in / आए", "dir:out": "📤 Went out / गए", "today": "📅 Dated today"}
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ERROR_REPLY = "Something went wrong. Nothing was saved. Please try again."
 PRIVATE_ONLY = "Please message me privately. Khata only works in a one-to-one chat."
@@ -43,9 +47,10 @@ RATE_PER_MIN = 30
 COMMANDS = {"start": "help", "help": "help", "export": "export",
             "list": "list", "undo": "undo", "remind": "remind",
             "expenses": "kharcha", "kharcha": "kharcha", "month": "kharcha",
-            "dues": "dues", "udhaar": "dues", "hisaab": "dues", "today": "today", "aaj": "today"}  # "id": adapter
+            "bill": "bill", "rates": "rates", "dues": "dues", "udhaar": "dues", "hisaab": "dues", "today": "today", "aaj": "today"}  # "id": adapter
 # Shown in Telegram's "/" menu (setMyCommands).
-MENU = [("dues", "Udhaar given and taken / लेन-देन"), ("today", "Today's expenses / आज का खर्च"),
+MENU = [("bill", "Make a bill / बिल बनाओ"), ("dues", "Udhaar balances / उधार हिसाब"),
+        ("rates", "Your item rates / रेट लिस्ट"), ("today", "Today's expenses / आज का खर्च"),
         ("expenses", "This month's expenses / महीने का खर्च"), ("remind", "Reminder links / तगादा"),
         ("undo", "Undo last entry / पिछली एंट्री हटाओ"), ("export", "Excel file / एक्सेल"),
         ("help", "How to use / मदद"), ("id", "Your chat id")]
@@ -192,9 +197,10 @@ class TelegramAPI:
             raise TelegramError("download: file too large")
         return content, path
 
-    def send_document(self, chat_id: int, filename: str, data: bytes, caption: str = "") -> None:
+    def send_document(self, chat_id: int, filename: str, data: bytes, caption: str = "",
+                      mime: str = XLSX_MIME) -> None:
         self._call("sendDocument", data={"chat_id": str(chat_id), "caption": caption[:1024]},
-                   files={"document": (filename, data, XLSX_MIME)}, timeout=60)
+                   files={"document": (filename, data, mime)}, timeout=60)
 
     def set_webhook(self, url: str, secret_token: str) -> None:
         self._call("setWebhook", json={"url": url, "secret_token": secret_token,
@@ -372,6 +378,9 @@ class TelegramAdapter:
         mid = self.api.send_message(chat_id, r["reply"], buttons)
         if buttons:
             self.keyboards[chat_id] = mid
+        if r.get("pdf"):
+            self.api.send_document(chat_id, r.get("pdf_name") or "bill.pdf", r["pdf"], r.get("pdf_name", ""),
+                                   mime="application/pdf")
         if r.get("export") and owner and self.export:
             self.api.send_document(chat_id, "khata.xlsx", self.export(owner), "khata.xlsx")
 

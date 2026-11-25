@@ -11,3 +11,4 @@ pytest
 hypothesis
 httpx
 pyyaml
+fpdf2

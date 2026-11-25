@@ -200,10 +200,10 @@ class SheetMirror:
         created = (d["recorded"] if DATE.fullmatch(d.get("recorded") or "") else d["date"]) + "T00:00:00+00:00"
         if d["kind"] == "expense":
             self.ledger.db.execute(
-                "INSERT INTO expenses(id,owner,category,paise,note,vendor,entry_date,status,source,created_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO expenses(id,owner,category,paise,note,vendor,entry_date,status,source,created_at,"
+                "direction) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (d["id"], self.owner, (d["category"] or "other")[:40], d["paise"], d["note"][:200],
-                 d["name"][:60], d["date"], d["status"], d["via"], created))
+                 d["name"][:60], d["date"], d["status"], d["via"], created, d.get("direction", "out")))
             return
         if not d["name"]:
             raise ValueError(d)

@@ -95,15 +95,15 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
 
     app = FastAPI(title="Khata", version="0.4.0", lifespan=lifespan)
     ledger = Ledger(db_path or DB_PATH)
-    bot = Bot(ledger, base_url=os.environ.get("KHATA_PUBLIC_URL", "").rstrip("/"))
+    bot = Bot(ledger, base_url=os.environ.get("KHATA_PUBLIC_URL", "").rstrip("/"),
+              mode_prefixes=tuple(p for p in os.environ.get("KHATA_MODE_OWNERS", "tg-").split(",") if p))
     guard = guard or PaidGuard()
     voice = VoicePipeline(guard, transcriber)
     bills = BillReader(guard, vision)
     app.state.bot, app.state.guard, app.state.voice, app.state.ledger = bot, guard, voice, ledger
 
     def bill_reply(owner: str, f) -> dict:
-        r = bot.start_from_extraction(owner, to_extraction(f), "bill")
-        return {**r, "reply": intro(f) + "\n" + r["reply"]}
+        return bot.start_from_bill(owner, f, intro(f))
 
     def on_image(owner: str, image: bytes, mime: str) -> dict:
         try:

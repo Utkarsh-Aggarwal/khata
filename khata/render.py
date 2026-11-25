@@ -20,7 +20,7 @@ TYPE_LABEL = {"credit": "Udhaar given", "payment": "Payment received"}
 CATEGORY_LABEL = {
     "electricity": "Electricity", "rent": "Rent", "salary": "Salary", "transport": "Transport",
     "stock": "Stock", "phone": "Phone/internet", "water": "Water", "gas": "Gas", "tea": "Tea/snacks",
-    "repair": "Repair", "purchase": "Purchase", "other": "Other",
+    "repair": "Repair", "purchase": "Purchase", "sale": "Sale", "other": "Other",
 }
 CATEGORY_OF_LABEL = {v.lower(): k for k, v in CATEGORY_LABEL.items()}
 VIA_LABEL = {"voice": "Voice note", "telegram": "Telegram", "bill": "Bill photo", "text": "Web chat",
@@ -32,8 +32,9 @@ def _rupees(paise: int) -> float | int:
     return paise // 100 if paise % 100 == 0 else paise / 100
 
 
-def expense_label(category: str) -> str:
-    return f"Expense ({CATEGORY_LABEL.get(category, category)})"
+def expense_label(category: str, direction: str = "out") -> str:
+    word = "Money in" if direction == "in" else "Expense"
+    return f"{word} ({CATEGORY_LABEL.get(category, category)})"
 
 
 def transaction_rows(ledger: Ledger, owner: str) -> list[list]:
@@ -52,7 +53,7 @@ def transaction_rows(ledger: Ledger, owner: str) -> list[list]:
         if tag == "K":
             kind, name, due = TYPE_LABEL[r["kind"]], r["cname"], r["due_date"] or ""
         else:
-            kind, name, due = expense_label(r["category"]), r["vendor"] or "", ""
+            kind, name, due = expense_label(r["category"], r["direction"] or "out"), r["vendor"] or "", ""
         note = r["note"] or ""
         if note.lower() == "bill photo":           # the Via column already says so
             note = ""
@@ -84,12 +85,13 @@ def parse_row(row: list) -> dict:
     if len(ref) < 3 or ref[:2] not in ("K-", "E-") or not ref[2:].isdigit():
         raise ValueError(ref)
     label = str(row[COL["Type"]]).strip()
-    category = ""
+    category, direction = "", "out"
     if ref[0] == "E":
-        if not (label.startswith("Expense (") and label.endswith(")")):
+        prefix = next((w for w in ("Expense (", "Money in (") if label.startswith(w)), None)
+        if not prefix or not label.endswith(")"):
             raise ValueError(ref)
-        kind = "expense"
-        cat = label[len("Expense ("):-1]
+        kind, direction = "expense", ("in" if prefix == "Money in (" else "out")
+        cat = label[len(prefix):-1]
         category = CATEGORY_OF_LABEL.get(cat.lower(), cat.lower())
     else:
         kind = {v.lower(): k for k, v in TYPE_LABEL.items()}.get(label.lower())
@@ -99,6 +101,7 @@ def parse_row(row: list) -> dict:
     return {"id": int(ref[2:]), "kind": kind, "date": str(row[COL["Date"]])[:10],
             "name": str(row[COL["Name"]]).strip(), "category": category, "paise": paise,
             "due": str(row[COL["Due"]])[:10] or None, "status": "active", "note": str(row[COL["Note"]]),
+            "direction": direction,
             "via": VIA_OF_LABEL.get(str(row[COL["Via"]]).strip().lower(), "sheet"),
             "recorded": str(row[COL["Recorded on"]])[:10]}
 
