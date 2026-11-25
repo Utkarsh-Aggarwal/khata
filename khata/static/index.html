@@ -91,7 +91,10 @@ select{font:inherit;padding:6px;border:2px solid var(--ink);background:#fffdf5;b
     <h2 style="margin-top:14px">Ledger</h2>
     <table><thead><tr><th>Who</th><th>Kind</th><th>₹</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
     <div class="quick">
-      <a href="/api/export.xlsx"><button class="alt" type="button">Export .xlsx</button></a>
+      <label for="expTable">Export</label>
+      <select id="expTable"><option value="all">All tables</option><option>Udhaar</option><option>Bills</option><option>Entries</option><option>Dues</option><option>Rates</option><option>Customers</option></select>
+      <button class="alt" type="button" id="expPdf">📄 PDF</button>
+      <button class="alt" type="button" id="expXlsx">📊 Excel</button>
       <button class="alt" type="button" id="del">Delete my data</button>
     </div>
   </section>
@@ -151,6 +154,8 @@ $("seanceBtn").onclick=()=>{const s=$("seance"),open=s.hidden;s.hidden=!open;$("
 async function lab(){const d=await (await fetch("/api/lab")).json();
   $("parts").innerHTML=d.parts.map(p=>`<div class="part ${p.alive?"alive":"dead"}"><b>${esc(p.part)}</b><span class="st">${p.alive?"● alive":"○ dormant"}</span><div>${esc(p.impl)}</div><code>${esc(p.swap)}</code></div>`).join("")}
 $("kacha").onclick=async()=>{add("me","✍️ kacha bill (sample)");show(await api("/api/bill/sample?kind=kacha",{method:"POST"}))};
+$("expPdf").onclick=()=>{location.href="/api/export/"+encodeURIComponent($("expTable").value)+".pdf"};
+$("expXlsx").onclick=()=>{location.href="/api/export/"+encodeURIComponent($("expTable").value)+".xlsx"};
 $("del").onclick=async()=>{if(confirm("Delete all your data?")){await fetch("/api/data",{method:"DELETE"});add("bot","All your data was deleted.");refresh()}};
 (async()=>{   // no login here: api() logs in only when the cookie is missing, so a refresh keeps your data
   const h=await (await fetch("/health")).json();$("mode").textContent=h.mode==="demo"?"· demo mode (paid APIs off)":"· live";

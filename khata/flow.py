@@ -172,6 +172,9 @@ M = {
                "pa": "ਆਪਣਾ ਖਾਤਾ Excel ਵਿੱਚ ਡਾਊਨਲੋਡ ਕਰੋ: {url}"},
     "export_doc": {"en": "Here is your khata as an Excel file.", "hi": "आपका खाता Excel फ़ाइल में।",
                    "pa": "ਤੁਹਾਡਾ ਖਾਤਾ Excel ਫ਼ਾਈਲ ਵਿੱਚ।"},
+    "export_which": {"en": "Which table do you want?", "hi": "कौन सी टेबल चाहिए?", "pa": "ਕਿਹੜੀ ਟੇਬਲ ਚਾਹੀਦੀ ਹੈ?"},
+    "export_format": {"en": "PDF or Excel for {table}?", "hi": "{table}: PDF या Excel?", "pa": "{table}: PDF ਜਾਂ Excel?"},
+    "export_ready": {"en": "Here it is: {name}", "hi": "यह रही फ़ाइल: {name}", "pa": "ਇਹ ਰਹੀ ਫ਼ਾਈਲ: {name}"},
     "export_wa": {"en": "Excel export is available in the web app.", "hi": "Excel एक्सपोर्ट वेब ऐप में है।",
                   "pa": "Excel ਐਕਸਪੋਰਟ ਵੈੱਬ ਐਪ ਵਿੱਚ ਹੈ।"},
     "phone_saved": {"en": "Saved {name}'s WhatsApp number: {phone}.", "hi": "{name} का WhatsApp नंबर सेव किया: {phone}।",
@@ -237,6 +240,7 @@ class Bot:
     # Owners (by id prefix, e.g. "tg-") who pick a mode for each new record: Bill, Entry or Udhaar.
     mode_prefixes: tuple = ()
     drafts: dict = field(default_factory=dict)          # owner -> billing.Draft
+    export_choice: dict = field(default_factory=dict)   # owner -> table picked, waiting for the format
     waiting_mode: dict = field(default_factory=dict)    # owner -> (text, BillFields | None, source, lang)
 
     def say(self, key: str, lang: str, **kw) -> str:
@@ -252,6 +256,8 @@ class Bot:
             phone_cmd = self._phone_command(owner, text)
             if phone_cmd:
                 return phone_cmd
+            if text.startswith(("exp:", "fmt:")):
+                return self._export_step(owner, text)
             if owner in self.drafts:
                 r = self._bill_step(owner, text, source)
                 if r is not None:
@@ -293,10 +299,12 @@ class Bot:
             return self._r(self._dues(owner, extract(text).lang))
         if low in TODAY_W:
             return self._r(self._today_report(owner, extract(text).lang))
+        if low.split()[:1] in (["export"], ["/export"]) and len(low.split()) > 1:
+            return self._export_direct(owner, text)
         if low in ("export", "/export", "एक्सपोर्ट", "ਐਕਸਪੋਰਟ"):
             lang = extract(text).lang
             if source == "telegram":
-                return self._r(self.say("export_doc", lang), export=True)
+                return self._export_menu(lang)
             if source == "whatsapp":
                 return self._r(self.say("export_wa", lang))
             return self._r(self.say("export", lang, url=self.base_url + "/api/export.xlsx"), export=True)
@@ -505,13 +513,54 @@ class Bot:
         note = f"Bill {no}: " + "; ".join(f"{l.name} {l.qty_text()} {format_rupees(l.amount)}" for l in d.lines)
         note = note if len(note) <= 190 else note[:187] + "..."
         pdf = billing.build_pdf(d, bill_no=no, customer=customer, payment=payment)
-        extra = {"pdf": pdf, "pdf_name": f"bill-{no}.pdf", "changed": True, "bill_no": no}
+        extra = {"pdf": pdf, "pdf_name": f"bill-{no}.pdf", "file": pdf, "file_name": f"bill-{no}.pdf",
+                 "file_mime": "application/pdf", "changed": True, "bill_no": no}
         if payment == "cash":
             self.ledger.add_expense(owner, "sale", d.total, note=note, direction="in", source="bill")
             return self._r(self.say("bill_cash", d.lang, no=no, amt=format_rupees(d.total)), **extra)
         self.ledger.add_entry(owner, customer, "credit", d.total, note=note, source="bill")
         after = self._after(d.lang, customer, self.ledger.balance(owner, customer))
         return self._r(self.say("bill_udhaar", d.lang, no=no, amt=format_rupees(d.total), after=after), **extra)
+
+    # ---- export any table as PDF or Excel ------------------------------------------------
+    def _export_menu(self, lang: str) -> dict:
+        from .export import EXPORTABLE
+        return self._r(self.say("export_which", lang), buttons=[f"exp:{t}" for t in EXPORTABLE] + ["exp:all"])
+
+    def _export_step(self, owner: str, text: str) -> dict:
+        from .export import EXPORTABLE
+        lang = getattr(self, "_export_lang", {}).get(owner, "en")
+        if text.startswith("exp:"):
+            table = text[4:]
+            if table != "all" and table not in EXPORTABLE:
+                return self._export_menu(lang)
+            self.export_choice[owner] = table
+            return self._r(self.say("export_format", lang, table="all tables" if table == "all" else table),
+                           buttons=["fmt:pdf", "fmt:xlsx"])
+        table = self.export_choice.pop(owner, None)
+        if not table:
+            return self._export_menu(lang)
+        return self._export_send(owner, table, "pdf" if text == "fmt:pdf" else "xlsx", lang)
+
+    def _export_direct(self, owner: str, text: str) -> dict:
+        """'/export udhaar pdf', 'export bills excel', 'export all xlsx'."""
+        from .export import TABLE_ALIASES
+        words = text.lower().split()[1:]
+        lang = extract(text).lang
+        table = next((TABLE_ALIASES[w] for w in words if w in TABLE_ALIASES), None)
+        fmt = "pdf" if "pdf" in words else ("xlsx" if words and set(words) & {"xlsx", "excel", "xls"} else None)
+        if not table:
+            return self._export_menu(lang)
+        if not fmt:
+            self.export_choice[owner] = table
+            return self._r(self.say("export_format", lang, table="all tables" if table == "all" else table),
+                           buttons=["fmt:pdf", "fmt:xlsx"])
+        return self._export_send(owner, table, fmt, lang)
+
+    def _export_send(self, owner: str, table: str, fmt: str, lang: str) -> dict:
+        from .export import export_file
+        name, data, mime = export_file(self.ledger, owner, table, fmt)
+        return self._r(self.say("export_ready", lang, name=name), file=data, file_name=name, file_mime=mime)
 
     def _rates(self, owner: str, lang: str) -> dict:
         rs = self.ledger.prices(owner)

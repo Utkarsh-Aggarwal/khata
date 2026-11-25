@@ -38,6 +38,9 @@ BUTTON_TITLES = {"yes": "✅ Yes / हाँ", "no": "❌ No / नहीं",
                  "mode:bill": "🧾 Bill / बिल", "mode:entry": "📒 Entry / एंट्री", "mode:udhaar": "🤝 Udhaar / उधार",
                  "bill:done": "✅ Done / हो गया", "bill:cancel": "❌ Cancel / रद्द",
                  "pay:cash": "💵 Cash / नकद", "pay:udhaar": "🤝 Udhaar / उधार",
+                 "exp:Udhaar": "🤝 Udhaar", "exp:Bills": "🧾 Bills", "exp:Entries": "📒 Entries",
+                 "exp:Dues": "📊 Dues", "exp:Rates": "🏷️ Rates", "exp:Customers": "👥 Customers",
+                 "exp:all": "📚 All tables", "fmt:pdf": "📄 PDF", "fmt:xlsx": "📊 Excel",
                  "dir:in": "📥 Came in / आए", "dir:out": "📤 Went out / गए", "today": "📅 Dated today"}
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ERROR_REPLY = "Something went wrong. Nothing was saved. Please try again."
@@ -418,10 +421,10 @@ class TelegramAdapter:
         mid = self.api.send_message(chat_id, r["reply"], buttons)
         if buttons:
             self.keyboards[chat_id] = mid
-        if r.get("pdf"):
-            self.api.send_document(chat_id, r.get("pdf_name") or "bill.pdf", r["pdf"], r.get("pdf_name", ""),
-                                   mime="application/pdf")
-        if r.get("export") and owner and self.export:
+        if r.get("file"):
+            self.api.send_document(chat_id, r.get("file_name") or "khata", r["file"], r.get("file_name", ""),
+                                   mime=r.get("file_mime") or XLSX_MIME)
+        elif r.get("export") and owner and self.export:
             self.api.send_document(chat_id, "khata.xlsx", self.export(owner), "khata.xlsx")
 
 

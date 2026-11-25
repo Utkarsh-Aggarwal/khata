@@ -271,6 +271,21 @@ def create_app(db_path: str | None = None, guard: PaidGuard | None = None,
         ]
         return {"mode": "live" if live else "demo", "parts": parts}
 
+    @app.get("/api/export/{table}.{fmt}")
+    def export_table(table: str, fmt: str, sid: str | None = Cookie(None)):
+        """Any table as PDF or Excel: /api/export/Udhaar.pdf, /api/export/all.xlsx ..."""
+        from .export import TABLE_ALIASES, export_file
+        o = owner_of(sid)
+        t = TABLE_ALIASES.get(table.lower(), table)
+        if fmt not in ("pdf", "xlsx"):
+            raise HTTPException(404, "format must be pdf or xlsx")
+        try:
+            name, data, mime = export_file(ledger, o, t, fmt)
+        except ValueError:
+            raise HTTPException(404, "unknown table")
+        return StreamingResponse(io.BytesIO(data), media_type=mime,
+                                 headers={"Content-Disposition": f"attachment; filename={name}"})
+
     @app.get("/api/export.xlsx")
     def export(sid: str | None = Cookie(None)):
         o = owner_of(sid)

@@ -112,7 +112,7 @@ class FakeAPI:
             raise TelegramError("download: HTTP 404")
         return self.files[file_id]
 
-    def send_document(self, chat_id, filename, data, caption=""):
+    def send_document(self, chat_id, filename, data, caption="", mime=None):
         self._record("send_document", chat_id, filename, data, caption)
 
     def sent(self) -> list[tuple]:
@@ -1463,8 +1463,12 @@ def test_app_wiring_polling_is_off_in_tests_and_full_flow(monkeypatch):
     owner = owner_for_chat(CHAT, "")
     assert app.state.ledger.balance(owner, "Ramesh") == 50000
     tg.handle_update(text_update(3, "/export@Ledgy637Bot"))
+    assert "exp:Udhaar" in api.sent()[-1][2] and "exp:all" in api.sent()[-1][2]
+    for n, data in ((4, "exp:Udhaar"), (5, "fmt:xlsx")):
+        tg.handle_update({"update_id": n, "callback_query": {"id": "e", "data": data, "message": {
+            "message_id": tg.keyboards[CHAT], "chat": {"id": CHAT, "type": "private"}}}})
     docs = [cl for cl in api.calls if cl[0] == "send_document"]
-    assert len(docs) == 1 and docs[0][3][:2] == b"PK"
+    assert len(docs) == 1 and docs[0][3][:2] == b"PK" and docs[0][2] == "khata-udhaar.xlsx"
 
 
 def test_no_token_means_telegram_off():

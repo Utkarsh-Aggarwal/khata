@@ -22,5 +22,7 @@ chat "yes" | grep -q 'Saved' || fail bill_save
 chat "undo" | grep -q 'Undone' || fail undo
 curl -sf -b "$J" -F "file=@/dev/null;filename=n.webm" "$B/api/voice" | grep -q 'demo mode\|Empty' || fail voice
 curl -sf -b "$J" -o /dev/null "$B/api/export.xlsx" || fail export
+P="$(mktemp)"; curl -sf -b "$J" -o "$P" "$B/api/export/Udhaar.pdf" || fail export_pdf
+[ "$(head -c 4 "$P")" = "%PDF" ] || fail export_pdf; rm -f "$P"
 [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$B/webhook/whatsapp" -d '{}')" != "200" ] || fail webhook_unsigned
 echo "SMOKE OK"
