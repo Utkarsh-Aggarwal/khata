@@ -43,6 +43,18 @@ PAIRS = [
     ("dormant card text (opacity .85)", INK, CARD, .85),
     ("cancelled row (opacity .75)", INK, PAPER, .75),
     ("séance quote (opacity .85)", INK, PAPER, .85),
+    # redesign
+    (".note / labels on paper", "#4a3c2c", PAPER, 1),
+    (".note / labels on card", "#4a3c2c", CARD, 1),
+    ("hero and steps text on night2", GHOST, "#221c2b", 1),
+    ("footer text on night", "#cfc9e0", NIGHT, 1),
+    ("chat header subtitle on night2", "#cfc9e0", "#221c2b", 1),
+    ("my chat bubble text", INK, "#dcefd2", 1),
+    ("status pill: white on moss", "#ffffff", MOSS, 1),
+    ("status pill / udhaar badge: white on blood", "#ffffff", BLOOD, 1),
+    ("stat number (blood) on card", BLOOD, CARD, 1),
+    ("primary button: night on ghost", NIGHT, GHOST, 1),
+    ("séance quote on card", "#3d3022", CARD, 1),
 ]
 
 fail = 0

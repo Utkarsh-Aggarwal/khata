@@ -4,114 +4,170 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Khata: a paper ledger haunted by ghosts that collect the dues</title>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Gurmukhi:wght@400;700&family=Special+Elite&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700&family=Noto+Sans+Gurmukhi:wght@400;700&family=Special+Elite&display=swap" rel="stylesheet">
 <style>
-:root{--paper:#f3e7c9;--ink:#2a1e12;--blood:#8c1d1d;--moss:#2f5d3a;--night:#15121a;--ghost:#e9e6f5}
+:root{--paper:#f3e7c9;--card:#fffdf5;--ink:#2a1e12;--blood:#8c1d1d;--moss:#2f5d3a;--night:#15121a;--night2:#221c2b;--ghost:#e9e6f5;--me:#dcefd2}
 *{box-sizing:border-box}
-body{margin:0;background:var(--night);color:var(--ink);font:16px/1.5 "Noto Sans Devanagari","Noto Sans Gurmukhi","Special Elite",system-ui,sans-serif}
-header{padding:14px 20px;color:var(--ghost);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
-header h1{margin:0;font:28px "Special Elite",serif}
-header small{opacity:.85}
-main{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 16px 16px;max-width:1100px;margin:auto}
-@media(max-width:800px){main{grid-template-columns:1fr}}
-section{background:var(--paper);border-radius:6px;padding:14px;box-shadow:0 0 0 3px #0003 inset;background-image:repeating-linear-gradient(transparent 0 27px,#8a6d3b33 27px 28px)}
-h2{margin:0 0 8px;font:20px "Special Elite",serif;color:var(--blood)}
-#log{height:330px;overflow:auto;display:flex;flex-direction:column;gap:6px}
-.m{padding:6px 10px;border-radius:8px;max-width:88%;white-space:pre-wrap}
-.me{align-self:flex-end;background:#fff8;border:1px solid #0002}
-.bot{align-self:flex-start;background:#2a1e1214;border:1px solid #0002}
-form{display:flex;gap:6px;margin-top:8px}
-input{flex:1;padding:10px;border:2px solid var(--ink);background:#fffdf5;font:inherit;border-radius:4px}
-button{font:inherit;padding:8px 12px;border:2px solid var(--ink);background:var(--ink);color:var(--paper);border-radius:4px;cursor:pointer}
-button.alt{background:transparent;color:var(--ink)}
-button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(--blood);outline-offset:2px}
-.quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
-.ghosts{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
-.ghost{background:#15121a;color:var(--ghost);border-radius:8px;padding:8px;text-align:center;text-decoration:none;display:block}
-.ghost svg{width:64px;height:72px;animation:float 3s ease-in-out infinite}
+body{margin:0;background:radial-gradient(1200px 500px at 50% -120px,#3a2a4a 0,var(--night) 70%) fixed;color:var(--ink);
+  font:16px/1.5 "Noto Sans Devanagari","Noto Sans Gurmukhi",system-ui,sans-serif}
+a{color:var(--blood)}
+.wrap{max-width:1140px;margin:auto;padding:0 16px}
+/* hero */
+.hero{color:var(--ghost);padding:28px 0 18px;display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:24px;align-items:center}
+.hero h1{margin:0;font:44px/1.1 "Special Elite",serif;letter-spacing:.5px}
+.hero h1 span{display:inline-block;animation:float 3s ease-in-out infinite}
+.hero p.lead{font-size:19px;margin:10px 0 16px;color:var(--ghost)}
+.cta{display:flex;gap:10px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;font:600 16px inherit;font-family:inherit;padding:11px 18px;border-radius:999px;
+  text-decoration:none;cursor:pointer;border:2px solid var(--ghost)}
+.btn.primary{background:var(--ghost);color:var(--night)}
+.btn.ghosty{background:transparent;color:var(--ghost)}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.steps li{background:var(--night2);border:1px solid #ffffff22;border-radius:12px;padding:10px 14px;color:var(--ghost)}
+.steps b{font:20px "Special Elite";margin-right:8px}
+.status{font-size:14px;color:var(--ghost);margin-top:12px}
+.pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:13px;font-weight:700;background:#2f5d3a;color:#fff}
+.pill.off{background:var(--blood)}
+/* layout */
+main{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:18px;padding-bottom:18px}
+@media(max-width:860px){main,.hero{grid-template-columns:minmax(0,1fr)}.hero h1{font-size:36px}#log{min-height:300px}}
+main>*,.hero>*{min-width:0}
+.pill{white-space:normal}
+section{background:var(--paper);border-radius:14px;padding:16px;box-shadow:0 10px 30px #0006}
+h2{margin:0 0 10px;font:21px "Special Elite",serif;color:var(--blood)}
+.note{font-size:13px;color:#4a3c2c}
+/* chat */
+.chat{display:flex;flex-direction:column;padding:0;overflow:hidden}
+.chathead{background:var(--night2);color:var(--ghost);padding:10px 14px;display:flex;align-items:center;gap:10px}
+.chathead .av{width:34px;height:34px;border-radius:50%;background:var(--ghost);display:grid;place-items:center;font-size:18px}
+.chathead small{display:block;font-size:12px;color:#cfc9e0}
+#log{flex:1;min-height:390px;max-height:640px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:14px;
+  background:#efe3c2 repeating-linear-gradient(transparent 0 27px,#8a6d3b22 27px 28px)}
+.m{padding:8px 12px;border-radius:14px;max-width:85%;white-space:pre-wrap;box-shadow:0 1px 0 #0002;line-height:1.45}
+.me{align-self:flex-end;background:var(--me);border-bottom-right-radius:4px}
+.bot{align-self:flex-start;background:var(--card);border-bottom-left-radius:4px}
+.chatfoot{padding:10px 12px;background:var(--paper);border-top:1px solid #0001}
+#quick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+#quick:empty{display:none}
+#quick button{background:var(--ink);color:var(--paper);border-radius:999px;padding:7px 14px;border:0;font:600 15px inherit;font-family:inherit;cursor:pointer}
+form{display:flex;gap:6px}
+input{flex:1;min-width:0;padding:11px 14px;border:2px solid #2a1e1255;background:var(--card);font:inherit;border-radius:999px}
+button{font:inherit;padding:8px 14px;border:2px solid var(--ink);background:var(--ink);color:var(--paper);border-radius:999px;cursor:pointer}
+button.alt,.chip{background:var(--card);color:var(--ink);border:1.5px solid #2a1e1266}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{border-radius:999px;padding:6px 12px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+button:focus-visible,input:focus-visible,a:focus-visible,select:focus-visible,.chip:focus-within{outline:3px solid var(--blood);outline-offset:2px}
+/* dues */
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
+.stat{background:var(--card);border-radius:12px;padding:10px 12px}
+.stat .lbl{font-size:13px;color:#4a3c2c}
+.stat .num{font:28px "Special Elite";display:block;color:var(--blood)}
+.stat .num.ok{color:var(--moss)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px}
+.ghosts{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px}
+.ghost{background:var(--night);color:var(--ghost);border-radius:14px;padding:10px 6px;text-align:center;text-decoration:none;display:block;transition:transform .15s}
+.ghost:hover{transform:translateY(-3px)}
+.ghost svg{width:56px;height:64px;display:block;margin:0 auto 4px;animation:float 3s ease-in-out infinite}
+.ghost b{display:block}
 .ghost.over svg path{fill:#f6c7c7}
 @keyframes float{50%{transform:translateY(-6px)}}
-@media(prefers-reduced-motion:reduce){.ghost svg{animation:none}}
-.amt{font:18px "Special Elite";display:block}
+@media(prefers-reduced-motion:reduce){.ghost svg,.hero h1 span{animation:none}}
+.amt{font:20px "Special Elite";display:block}
 .tag{font-size:12px;color:#f6c7c7}
-table{width:100%;border-collapse:collapse;font-size:14px}
-td,th{padding:3px 4px;border-bottom:1px dotted #0004;text-align:left}
+table{width:100%;border-collapse:collapse;font-size:14px;background:var(--card);border-radius:10px;overflow:hidden}
+td,th{padding:6px 8px;border-bottom:1px solid #2a1e1214;text-align:left}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#4a3c2c}
+td.r,th.r{text-align:right}
+.badge{display:inline-block;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:700;color:#fff;background:var(--blood)}
+.badge.payment{background:var(--moss)}
 .cancelled{text-decoration:line-through;opacity:.75}
+select{font:inherit;padding:6px 10px;border:1.5px solid #2a1e1266;background:var(--card);border-radius:999px}
+#seance{background:var(--card);border-radius:12px;padding:10px 12px;margin-top:10px}
+#seanceList li{margin:6px 0}
+#seanceList q{display:block;font-size:14px;color:#3d3022}
 .lab{grid-column:1/-1}
 .parts{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
-.part{border:2px dashed var(--ink);border-radius:6px;padding:8px;background:#fffdf5}
+.part{border:2px dashed #2a1e1288;border-radius:12px;padding:10px;background:var(--card);overflow-wrap:anywhere}
 .part b{display:block}
 .part .st{font-size:13px;font-weight:700}
 .part.alive .st{color:var(--moss)}
-.part.dead{border-color:#6b5a48;opacity:.85}
 .part.dead .st{color:var(--blood)}
-.part code{font-size:12px;word-break:break-word}
-select{font:inherit;padding:6px;border:2px solid var(--ink);background:#fffdf5;border-radius:4px}
-#seanceList li{margin:6px 0}
-#seanceList q{display:block;font-size:14px;opacity:.85}
-#total{font:22px "Special Elite"}
-.note{font-size:13px;opacity:.8}
+.part code{font-size:12px;color:#4a3c2c}
+footer{color:#cfc9e0;font-size:13px;text-align:center;padding:4px 0 24px}
+footer a{color:var(--ghost)}
 </style>
 </head>
 <body>
-<header>
-  <h1>📒 Khata <span aria-hidden="true">👻</span></h1>
-  <small>A paper khata stitched to voice, vision and chat. Ghosts collect the dues.
-  <span id="mode"></span></small>
-</header>
-<main>
-  <section aria-label="What is this" class="lab">
-    <h2>What is this?</h2>
-    <p style="margin:0">Khata is a ledger for small Indian shops. Shopkeepers use it on <b>Telegram</b>
-    (<a href="https://t.me/Ledgy637Bot">@Ledgy637Bot</a>) by typing, sending voice notes, or photographing bills.
-    This page is a demo of the same bot in your browser. <b>Ramesh and Sita are sample customers</b>, so the ghosts and the
-    ledger have something to show. This demo khata belongs only to this browser. Press <b>Clear sample data</b> to start empty.</p>
-    <p class="note" style="margin:6px 0 0">Try: <q>Ramesh ne 500 diye</q>, then tap Yes. Or press 🧾 Try sample bill. Then tap a ghost.</p>
-  </section>
-  <section aria-label="Chat">
-    <h2>Chat with your khata</h2>
-    <div id="log" role="log" aria-live="polite"></div>
-    <div class="quick" id="quick"></div>
-    <form id="f"><input id="t" autocomplete="off" aria-label="Message" placeholder="Ramesh ko 500 udhaar  /  रमेश ने 200 दिए  /  ਸੀਤਾ ਨੂੰ 300 ਉਧਾਰ"><button type="button" class="alt" id="mic" aria-label="Record voice note" aria-pressed="false">🎙️</button><button>Send</button></form>
-    <div class="quick">
-      <label class="alt" style="border:2px solid var(--ink);padding:8px 12px;border-radius:4px;cursor:pointer">🧾 Bill photo
-        <input type="file" id="bill" accept="image/jpeg,image/png,image/webp" capture="environment" style="position:absolute;opacity:0;width:1px;height:1px"></label>
-      <button type="button" class="alt" id="sample" title="Uses a pre-read sample bill; works with paid APIs off">🧾 Try sample bill</button>
-      <button type="button" class="alt" id="kacha" title="A pre-read handwritten bill with mistakes; works with paid APIs off">✍️ Try kacha bill</button>
+<div class="wrap">
+<header class="hero">
+  <div>
+    <h1>📒 Khata <span aria-hidden="true">👻</span></h1>
+    <p class="lead">A paper khata for Indian shops, stitched to voice, bill photos, chat and a Google Sheet.
+      Customers who owe you turn into ghosts.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://t.me/Ledgy637Bot" target="_blank" rel="noopener">✈️ Open on Telegram</a>
+      <a class="btn ghosty" href="#try">Try it here ↓</a>
     </div>
-    <p class="note">Every entry asks you to confirm before it is saved. Demo data is private to this browser.</p>
+    <div class="status">Status: <span id="mode" class="pill">checking…</span></div>
+  </div>
+  <ol class="steps" aria-label="How it works">
+    <li><b>1</b>Say or type it, in Hindi, Punjabi, Hinglish or English. Or photograph a bill.</li>
+    <li><b>2</b>Check it and tap ✅ Yes. Nothing is saved before that.</li>
+    <li><b>3</b>The ghosts remind customers who owe you, politely, on WhatsApp.</li>
+  </ol>
+</header>
+<main id="try">
+  <section aria-label="Chat" class="chat">
+    <div class="chathead"><span class="av" aria-hidden="true">👻</span><div><b>Ledgy</b><small>Demo khata, private to this browser</small></div></div>
+    <div id="log" role="log" aria-live="polite"></div>
+    <div class="chatfoot">
+      <div id="quick"></div>
+      <form id="f"><input id="t" autocomplete="off" aria-label="Message" placeholder="Ramesh ko 500 udhaar  /  रमेश ने 200 दिए"><button type="button" class="alt" id="mic" aria-label="Record voice note" aria-pressed="false">🎙️</button><button>Send</button></form>
+      <div class="chips" aria-label="Try these">
+        <button type="button" class="chip say" data-say="Ramesh ne 500 diye">💬 Ramesh ne 500 diye</button>
+        <button type="button" class="chip say" data-say="सीता को 300 उधार दिए">💬 सीता को 300 उधार दिए</button>
+        <button type="button" class="chip say" data-say="bijli bill 1200">💬 bijli bill 1200</button>
+        <button type="button" class="chip" id="sample" title="A pre-read sample bill; works with the AI off">🧾 Sample bill</button>
+        <button type="button" class="chip" id="kacha" title="A pre-read handwritten bill with mistakes; works with the AI off">✍️ Handwritten bill</button>
+        <label class="chip">📷 Your bill photo
+          <input type="file" id="bill" accept="image/jpeg,image/png,image/webp" capture="environment" style="position:absolute;opacity:0;width:1px;height:1px"></label>
+      </div>
+    </div>
   </section>
   <section aria-label="Dues">
-    <h2>Ghosts of dues past</h2>
-    <div>Total due: <span id="total">₹0</span> <span id="late" class="note"></span></div>
-    <div>🧾 Shop expenses this month: <b id="spent">₹0</b> <span id="spentBy" class="note"></span></div>
-    <div class="quick">
-      <label for="rlang">Reminder language</label>
-      <select id="rlang"><option value="hinglish">Hinglish</option><option value="hi">हिन्दी</option><option value="pa">ਪੰਜਾਬੀ</option><option value="en">English</option></select>
-      <button type="button" class="alt" id="seanceBtn" aria-expanded="false" aria-controls="seance">🕯️ Hold a séance</button>
+    <h2>👻 Ghosts of dues past</h2>
+    <div class="stats">
+      <div class="stat"><span class="lbl">Customers owe you</span><span class="num" id="total">₹0</span><span id="late" class="note"></span></div>
+      <div class="stat"><span class="lbl">Shop expenses this month</span><span class="num ok" id="spent">₹0</span><span id="spentBy" class="note"></span></div>
     </div>
     <div class="ghosts" id="ghosts"></div>
+    <div class="row">
+      <button type="button" id="seanceBtn" aria-expanded="false" aria-controls="seance">🕯️ Hold a séance</button>
+      <label for="rlang" class="note">Reminder language</label>
+      <select id="rlang"><option value="hinglish">Hinglish</option><option value="hi">हिन्दी</option><option value="pa">ਪੰਜਾਬੀ</option><option value="en">English</option></select>
+    </div>
     <div id="seance" hidden>
-      <h2>🕯️ Séance</h2>
-      <p class="note">Each link opens WhatsApp with the reminder typed out. You choose whether to send it.</p>
+      <p class="note" style="margin:0">Each link opens WhatsApp with the reminder typed out. You choose whether to send it.</p>
       <ol id="seanceList"></ol>
     </div>
-    <h2 style="margin-top:14px">Ledger</h2>
-    <table><thead><tr><th>Who</th><th>Kind</th><th>₹</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
-    <div class="quick">
-      <label for="expTable">Export</label>
+    <h2 style="margin-top:14px">📖 Ledger</h2>
+    <table><thead><tr><th>Who</th><th>What</th><th class="r">₹</th></tr></thead><tbody id="rows"></tbody></table>
+    <div class="row" style="margin-top:10px">
+      <label for="expTable" class="note">Export</label>
       <select id="expTable"><option value="all">All tables</option><option>Udhaar</option><option>Bills</option><option>Entries</option><option>Dues</option><option>Rates</option><option>Customers</option></select>
       <button class="alt" type="button" id="expPdf">📄 PDF</button>
       <button class="alt" type="button" id="expXlsx">📊 Excel</button>
-      <button class="alt" type="button" id="del">Clear sample data</button>
     </div>
+    <p class="note">Ramesh, Sita, Gupta and Pappu are sample customers. <button class="alt" type="button" id="del" style="padding:3px 10px;font-size:13px">Clear sample data</button></p>
   </section>
   <section aria-label="The Lab" class="lab">
     <h2>⚡ The Lab: what this monster is stitched from</h2>
-    <p class="note">Each part can be swapped with an environment variable. Dead parts fall back safely.</p>
+    <p class="note">Each part can be swapped with a setting. A part that's off falls back safely.</p>
     <div class="parts" id="parts"></div>
   </section>
 </main>
+<footer>Open source (MIT) · <a href="https://github.com/Utkarsh-Aggarwal/khata">GitHub</a> · Built with Kiro for Kiroween 2026</footer>
+</div>
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -132,10 +188,12 @@ async function refresh(){
   $("seanceList").innerHTML=owing.map(c=>`<li><a href="${esc(c.wa)}" target="_blank" rel="noopener">👻 ${esc(c.name)}: ${esc(c.balance)}${c.overdue?" ("+c.days_overdue+"d overdue)":""}${c.has_phone?"":" (pick contact)"}</a><q>${esc(c.message)}</q></li>`).join("")||"<li>Nobody owes you. The ghosts rest.</li>";
   $("ghosts").innerHTML=d.customers.filter(c=>c.paise>0).map(c=>
     `<a class="ghost ${c.overdue?"over":""}" href="${esc(c.wa)}" target="_blank" rel="noopener" aria-label="Send reminder to ${esc(c.name)}, owes ${esc(c.balance)}">${GHOST}<b>${esc(c.name)}</b><span class="amt">${esc(c.balance)}</span>${c.overdue?'<span class="tag">'+c.days_overdue+' days overdue</span>':'<span class="tag">tap to summon</span>'}</a>`).join("")||"<p>No dues. The ghosts rest.</p>";
-  $("rows").innerHTML=d.entries.slice(0,12).map(e=>`<tr class="${e.status}"><td>${esc(e.customer)}</td><td>${esc(e.kind)}</td><td>${(e.paise/100).toLocaleString("en-IN")}</td><td>${esc(e.status)}</td></tr>`).join("");
+  $("rows").innerHTML=d.entries.slice(0,12).map(e=>`<tr class="${e.status}"><td>${esc(e.customer)}</td><td><span class="badge ${e.kind==="payment"?"payment":""}">${e.kind==="payment"?"📥 paid back":"📤 udhaar"}</span>${e.status==="cancelled"?" (undone)":""}</td><td class="r">${(e.paise/100).toLocaleString("en-IN")}</td></tr>`).join("")||'<tr><td colspan="3" class="note">No entries yet. Try one in the chat.</td></tr>';
 }
+const LABEL={yes:"✅ Yes",no:"❌ No",credit:"📤 I gave",payment:"📥 They gave","?":"❓ Explain",expense:"🧾 Shop expense",
+  "dir:in":"📥 Came in","dir:out":"📤 Went out",today:"📅 Dated today"};
 function show(r){add("bot",r.reply);$("quick").innerHTML="";
-  (r.buttons||[]).forEach(b=>{const x=document.createElement("button");x.className="alt";x.type="button";x.textContent=b;x.onclick=()=>send(b);$("quick").append(x)});
+  (r.buttons||[]).forEach(b=>{const x=document.createElement("button");x.type="button";x.textContent=LABEL[b]||b;x.onclick=()=>send(b);$("quick").append(x)});
   refresh()}
 async function send(t){add("me",t);show(await api("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})}))}
 $("f").onsubmit=e=>{e.preventDefault();const v=$("t").value.trim();if(v){$("t").value="";send(v)}};
@@ -158,6 +216,7 @@ $("sample").onclick=async()=>{const d=document.createElement("div");d.className=
   d.innerHTML='<img src="/static/sample-bill.svg" alt="Sample bill: Sharma Kirana Store, total ₹846.50" width="140">';$("log").append(d);
   show(await api("/api/bill/sample",{method:"POST"}))};
 $("rlang").onchange=refresh;
+document.querySelectorAll(".say").forEach(b=>b.onclick=()=>send(b.dataset.say));
 $("seanceBtn").onclick=()=>{const s=$("seance"),open=s.hidden;s.hidden=!open;$("seanceBtn").setAttribute("aria-expanded",String(open))};
 async function lab(){const d=await (await fetch("/api/lab")).json();
   $("parts").innerHTML=d.parts.map(p=>`<div class="part ${p.alive?"alive":"dead"}"><b>${esc(p.part)}</b><span class="st">${p.alive?"● alive":"○ dormant"}</span><div>${esc(p.impl)}</div><code>${esc(p.swap)}</code></div>`).join("")}
@@ -166,8 +225,10 @@ $("expPdf").onclick=()=>{location.href="/api/export/"+encodeURIComponent($("expT
 $("expXlsx").onclick=()=>{location.href="/api/export/"+encodeURIComponent($("expTable").value)+".xlsx"};
 $("del").onclick=async()=>{if(confirm("Clear everything in this demo khata, including the sample customers?")){await fetch("/api/data",{method:"DELETE"});add("bot","Cleared. The khata is empty. Try: Ramesh ko 500 udhaar");refresh()}};
 (async()=>{   // no login here: api() logs in only when the cookie is missing, so a refresh keeps your data
-  const h=await (await fetch("/health")).json();$("mode").textContent=h.mode==="demo"?"· demo mode (paid APIs off)":"· live";
-  add("bot","Namaste! Try: 'Ramesh ko 500 udhaar', 'Sita ne 200 diye', 'Ramesh ka number 98765 43210', 'remind', 'undo'.");refresh();lab()})();
+  const h=await (await fetch("/health")).json();
+  $("mode").textContent=h.mode==="demo"?"demo mode: voice and photos off, typing works":"live: voice and photos on";
+  if(h.mode==="demo")$("mode").classList.add("off");
+  add("bot","🙏 Namaste! I'm Ledgy, your khata. Type an entry like 'Ramesh ko 500 udhaar', tap 🎙️ to speak, or try a sample bill below.");refresh();lab()})();
 </script>
 </body>
 </html>
