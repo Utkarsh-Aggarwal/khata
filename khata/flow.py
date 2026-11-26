@@ -97,6 +97,12 @@ FIX_KIND_W = (FIX_GIVE | FIX_TAKE | FIX_RECV | FIX_CREDIT_W | FIX_PAY_W | FIX_FI
 # These negate whatever follows, wherever they sit ("I never gave", "not credit", "jama mat karo").
 NEG_ANYWHERE = {"not", "never", "didn't", "didnt", "dont", "don't", "doesn't", "doesnt", "isn't", "isnt", "wasn't",
                 "wasnt", "mat", "na", "naa", "मत", "ਨਾ"}
+# Words around a rename: "uska naam Ramesh hai", "his name is Ramesh", "ਉਸਦਾ ਨਾਮ ਰਮੇਸ਼ ਹੈ".
+NAME_CUE = {"naam", "name", "नाम", "ਨਾਮ", "ਨਾਂ", "rename"}
+NAME_FILL = NAME_CUE | {"uska", "unka", "iska", "inka", "his", "her", "their", "is", "hai", "h", "tha", "the",
+                        "sahi", "correct", "real", "asli", "actual", "ka", "ki", "ke", "का", "की", "के", "उसका",
+                        "उनका", "इसका", "है", "था", "सही", "असली", "ਉਸਦਾ", "ਉਹਦਾ", "ਹੈ", "ਸਹੀ", "ਦਾ", "ਦੀ", "it's",
+                        "its", "it", "to", "should", "be", "karo", "kar", "do", "करो", "ਕਰੋ", "this", "person"}
 HONORIFIC = {"ji", "bhai", "sahab", "saab", "sir", "जी", "भाई", "साहब", "ਜੀ", "ਭਾਈ"}
 # Words around a correction: "nahi, naam Ramesh hai", "no, its Ramesh", "galat, maine diye".
 FIX_FILLER = {"no", "nahi", "nahin", "na", "nope", "galat", "wrong", "not", "arre", "are", "arey", "oh", "sorry",
@@ -216,6 +222,15 @@ M = {
     "fixed_name": {"en": "✏️ Name changed to {name}.", "hi": "✏️ नाम बदलकर {name} किया।",
                    "pa": "✏️ ਨਾਮ ਬਦਲ ਕੇ {name} ਕੀਤਾ।"},
     "fixed_kind": {"en": "✏️ Direction changed.", "hi": "✏️ लेन-देन की दिशा बदली।", "pa": "✏️ ਲੈਣ-ਦੇਣ ਦੀ ਦਿਸ਼ਾ ਬਦਲੀ।"},
+    "rename_ask": {"en": "✏️ Change the name \"{old}\" to \"{new}\" everywhere? Entries: {n}.",
+                   "hi": "✏️ \"{old}\" का नाम हर जगह \"{new}\" कर दूँ? ({n} एंट्री)",
+                   "pa": "✏️ \"{old}\" ਦਾ ਨਾਮ ਹਰ ਥਾਂ \"{new}\" ਕਰ ਦਿਆਂ? ({n} ਐਂਟਰੀਆਂ)"},
+    "rename_merge": {"en": "✏️ \"{new}\" is already a customer. Move all {n} entries of \"{old}\" into \"{new}\"?",
+                     "hi": "✏️ \"{new}\" पहले से ग्राहक है। \"{old}\" की सभी {n} एंट्री \"{new}\" में जोड़ दूँ?",
+                     "pa": "✏️ \"{new}\" ਪਹਿਲਾਂ ਹੀ ਗਾਹਕ ਹੈ। \"{old}\" ਦੀਆਂ ਸਾਰੀਆਂ {n} ਐਂਟਰੀਆਂ \"{new}\" ਵਿੱਚ ਜੋੜ ਦਿਆਂ?"},
+    "renamed": {"en": "✅ \"{old}\" is now \"{new}\". {after}", "hi": "✅ \"{old}\" अब \"{new}\" है। {after}",
+                "pa": "✅ \"{old}\" ਹੁਣ \"{new}\" ਹੈ। {after}"},
+    "rename_no": {"en": "Okay, the name was not changed.", "hi": "ठीक है, नाम नहीं बदला।", "pa": "ਠੀਕ ਹੈ, ਨਾਮ ਨਹੀਂ ਬਦਲਿਆ।"},
     "discarded": {"en": "(The unsaved entry was discarded.)", "hi": "(बिना सेव की एंट्री हटा दी गई।)",
                   "pa": "(ਬਿਨਾਂ ਸੇਵ ਕੀਤੀ ਐਂਟਰੀ ਹਟਾ ਦਿੱਤੀ ਗਈ।)"},
     "export": {"en": "Download your khata as Excel: {url}", "hi": "अपना खाता Excel में डाउनलोड करें: {url}",
@@ -292,6 +307,8 @@ class Bot:
     drafts: dict = field(default_factory=dict)          # owner -> billing.Draft
     export_choice: dict = field(default_factory=dict)   # owner -> table picked, waiting for the format
     waiting_mode: dict = field(default_factory=dict)    # owner -> (text, BillFields | None, source, lang)
+    renames: dict = field(default_factory=dict)         # owner -> (old name, new name, lang), waiting for yes
+    last_customer: dict = field(default_factory=dict)   # owner -> name on the last saved udhaar entry
 
     def say(self, key: str, lang: str, **kw) -> str:
         return M[key][L(lang)].format(**kw)
@@ -308,6 +325,11 @@ class Bot:
                 return phone_cmd
             if text.startswith(("exp:", "fmt:")):
                 return self._export_step(owner, text)
+            rn = self.renames.pop(owner, None)
+            if rn:
+                r = self._rename_answer(owner, rn, text)
+                if r is not None:
+                    return r
             if owner in self.drafts:
                 r = self._bill_step(owner, text, source)
                 if r is not None:
@@ -383,6 +405,9 @@ class Bot:
                     return self._r(self.say("balance", lang,
                                             after=self._after(lang, real, self.ledger.balance(owner, real))))
             return self._r(self._dues(owner, lang))
+        r = self._rename_request(owner, text, lang)  # "uska naam Ramesh hai, Mujhko Ramesh nahi"
+        if r is not None:
+            return r
         if self._modes(owner):                       # no guessing: the shopkeeper picks the mode
             self.waiting_mode[owner] = (text, None, source, lang)
             return self._mode_prompt(lang)
@@ -768,6 +793,90 @@ class Bot:
         return self._r(self.say(key, lang, name=ex.customer, amt=format_rupees(ex.paise), due=due, after=after),
                        buttons=["yes", "no"], pending=True)
 
+    # ---- renaming a saved customer ---------------------------------------------------------
+    def _rename_request(self, owner: str, text: str, lang: str) -> dict | None:
+        """'uska naam Ramesh hai, Mujhko Ramesh nahi', 'not Mujhko Ramesh, Ramesh', 'rename X to Y',
+        or 'naam Ramesh hai' right after saving. Asks before changing anything."""
+        names = [n for n, _ in self.ledger.customers(owner)]
+        if not names:
+            return None
+        toks = re.sub(r"[,;:।|.!?]", " | ", text).split()
+        low = [t.lower() for t in toks]
+        old, drop = None, set()
+        m = re.fullmatch(r"\s*rename\s+(.+?)\s+(?:to|as)\s+(.+?)\s*", text, re.I)
+        if m:
+            old = self.ledger.find_customer(owner, m.group(1))
+            if not old:
+                return None
+            new_toks = m.group(2).split()
+        else:
+            if not set(low) & (NAME_CUE | NEG):
+                return None
+            # An existing customer written next to a "not" is the wrong name. Matched by name key, so
+            # "Ramesh" in the message finds "रमेश" in the khata. Longest match first.
+            for size in (3, 2, 1):
+                for i in range(len(low) - size + 1):
+                    window = toks[i:i + size]
+                    if "|" in window:
+                        continue
+                    nxt = low[i + size] if i + size < len(low) else ""
+                    prev = low[i - 1] if i else ""
+                    if not ((nxt in NEG and nxt != "not") or prev == "not"):
+                        continue
+                    k = name_key(" ".join(window))
+                    hit = next((n for n in names if k and name_key(n) == k), None) \
+                        or self.ledger.find_customer(owner, " ".join(window))
+                    if hit:
+                        old = hit
+                        drop |= set(range(i, i + size)) | ({i + size} if nxt in NEG and nxt != "not" else {i - 1})
+                        break
+                if old:
+                    break
+            if not old:
+                if not set(low) & NAME_CUE or owner not in self.last_customer:
+                    return None
+                old = self.ledger.find_customer(owner, self.last_customer[owner])
+                if not old:
+                    return None
+            new_toks = [t for i, t in enumerate(toks) if i not in drop]
+            if not set(low) & NAME_CUE and "not" not in low:
+                # "Mahesh nahi, Ramesh" needs the comma: "Mahesh nahi aaya" (didn't come) is no rename
+                after = next((j for j in range(max(drop) + 1, len(low)) if low[j] == "|"), None)
+                before = any(low[j] == "|" for j in range(0, min(drop)))
+                if after is None and not before:
+                    return None
+        new = []
+        for t in new_toks:
+            w = t.lower().strip("'\"()")
+            if not w or w == "|" or w in NAME_FILL or w in FIX_FILLER or w in HONORIFIC or w in NEG:
+                continue
+            if w in STOP or w in CHAT_W or w in NOT_A_NAME or not name_key(w) or len(w) < 2:
+                return None                           # something else is being said
+            new.append(t.strip("'\"()"))
+        if not 1 <= len(new) <= 3:
+            return None
+        new_name = self.ledger.find_customer(owner, " ".join(new)) or " ".join(new).title()
+        if new_name == old:
+            return None
+        n = sum(1 for e in self.ledger.entries(owner) if e.customer == old)
+        merge = new_name in names
+        self.renames[owner] = (old, new_name, lang)
+        return self._r(self.say("rename_merge" if merge else "rename_ask", lang, old=old, new=new_name, n=n),
+                       buttons=["yes", "no"])
+
+    def _rename_answer(self, owner: str, rn: tuple, text: str) -> dict | None:
+        old, new, lang = rn
+        low = text.lower().strip().rstrip(".!।")
+        if low in YES:
+            final = self.ledger.rename_customer(owner, old, new)
+            if self.last_customer.get(owner) == old:
+                self.last_customer[owner] = final
+            return self._r(self.say("renamed", lang, old=old, new=final,
+                                    after=self._after(lang, final, self.ledger.balance(owner, final))), changed=True)
+        if low in NO:
+            return self._r(self.say("rename_no", lang))
+        return None                                   # something else: the rename is dropped
+
     @staticmethod
     def _fix_direction(w: set[str], named: bool) -> str | None:
         """Which way, from a short correction. 'unknown' when the cues conflict or there's no actor:
@@ -971,6 +1080,7 @@ class Bot:
                 ex.paise, note=ex.note, entry_date=ex.entry_date, due_date=ex.due_date,
                 source=p.source)
             del self.pending[owner]
+            self.last_customer[owner] = self.ledger.find_customer(owner, ex.customer) or ex.customer
             bal = self.ledger.balance(owner, ex.customer)
             return self._r(self.say("saved", lang, after=self._after(lang, ex.customer, bal)),
                            changed=True, entry_id=e_id)

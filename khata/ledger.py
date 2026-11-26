@@ -179,6 +179,37 @@ class Ledger:
                                    (owner,)).fetchall()
         return {r["name"]: r["phone"] for r in rows}
 
+    def rename_customer(self, owner: str, old: str, new: str) -> str:
+        """Correct a customer's name everywhere. If `new` is already a customer, the two are merged
+        (entries, phone, aliases, bills). The old spelling stays as an alias. Returns the final name."""
+        new = " ".join(new.split())[:40]
+        if not name_key(new):
+            raise LedgerError("customer name required")
+        with self.lock:
+            src = self._find(owner, old)
+            if not src:
+                raise LedgerError("unknown customer")
+            dst = self._find(owner, new)
+            if dst and dst["id"] != src["id"]:
+                self.db.execute("UPDATE entries SET customer_id=? WHERE owner=? AND customer_id=?",
+                                (dst["id"], owner, src["id"]))
+                self.db.execute("UPDATE aliases SET customer_id=? WHERE owner=? AND customer_id=?",
+                                (dst["id"], owner, src["id"]))
+                if src["phone"]:
+                    self.db.execute("UPDATE customers SET phone=COALESCE(phone, ?) WHERE id=?", (src["phone"], dst["id"]))
+                self.db.execute("DELETE FROM customers WHERE id=? AND owner=?", (src["id"], owner))
+                final, cid = dst["name"], dst["id"]
+            else:
+                self.db.execute("UPDATE customers SET name=?, key=? WHERE id=? AND owner=?",
+                                (new, name_key(new), src["id"], owner))
+                final, cid = new, src["id"]
+            if name_key(src["name"]) != name_key(final):   # old spelling still finds them
+                self.db.execute("INSERT OR REPLACE INTO aliases(owner,alias_key,customer_id) VALUES(?,?,?)",
+                                (owner, name_key(src["name"]), cid))
+            self.db.execute("UPDATE bills SET customer=? WHERE owner=? AND customer=?", (final, owner, src["name"]))
+            self._commit()
+            return final
+
     def add_alias(self, owner: str, name: str, alias: str) -> None:
         with self.lock:
             r = self._find(owner, name)
