@@ -24,9 +24,12 @@ A Telegram bot, @Ledgy637Bot, with three modes chosen by button so it never gues
 
 It understands Hindi, Punjabi, Hinglish and English, typed or as voice notes. It reads printed and **kacha
 (handwritten) bills**, line by line, and checks the arithmetic: it caught a planted 3 × ₹45 = ₹145 mistake.
-Nothing is saved without a confirm tap.
+Nothing is saved without a confirm tap, and you can correct it in plain words before or after saving:
+"nahi, Suresh", "nahi, maine diye", or "uska naam Ramesh hai, Mujhko Ramesh nahi". When the correction is unclear, it asks.
 
-Everything lands in a **two-way Google Sheet**: the shopkeeper can edit, delete or add rows there and the bot picks it up.
+Everything lands in the shopkeeper's **own two-way Google Sheet**, connected from the chat: `/start` lists three steps, and
+pasting the sheet's link connects it. The shopkeeper can edit, delete or add rows there and the bot picks it up. `/reset`
+starts a fresh khata and keeps the old sheet as a backup.
 Any table exports as PDF or Excel. Customers who owe money become ghosts, and the séance drafts polite WhatsApp
 reminders in the customer's language.
 
@@ -46,21 +49,27 @@ tiers: Groq, Telegram, Google Sheets and Render. See `docs/KIRO.md`.
 - **Whisper writes Hindi in Urdu script** for some voices. The bot detects that and re-asks in Hindi.
 - **Old buttons.** Telegram keeps old "Yes" buttons tappable. A property-based test proved an old tap can never confirm a
   different entry.
+- **Corrections are where rules break.** "maine nahi diye" (I did *not* give), "not credit", "usne usko diye": every
+  wording we handled exposed another. Our custom Kiro agent, khata-eval-guard, rejected the correction feature four times
+  with concrete failing phrases before accepting it. The rule we kept: if a correction is unclear, ask.
 - **The sheet is both a report and an input.** Edits are compared with what the bot last wrote, and bad rows stay visible
   with a reason, so nothing typed is lost.
 
 ## Accomplishments
 - Rule-based extraction: 16/20 on a blind set never tuned on, with no wrong entry sent straight to confirmation.
-- 270+ tests, including 18 Hypothesis property-based tests covering all 16 correctness properties in the spec.
-- [Fill in after the voice eval: results on N real recordings.]
+- 430+ tests, including 18 Hypothesis property-based tests covering all 16 correctness properties in the spec, and 140
+  wordings of corrections in Hindi, Punjabi, Hinglish and English.
+- Voice: tested by hand on real Hindi and Hinglish voice notes. We have not run a scored voice eval yet.
 
 ## What's next
-A collections agent that messages customers directly with a UPI link and negotiates payment plans; reading whole
+An LLM conversation layer: we tested `gpt-oss-120b` on Groq with tools that only *propose* entries, and it handled the
+correction sentences our rules struggled with. The rules would stay as the safety net and the offline fallback. Also: a
+collections agent that messages customers directly with a UPI link and negotiates payment plans; reading whole
 handwritten khata pages; today's sales and profit.
 
 ## Links
 - Repo: https://github.com/Utkarsh-Aggarwal/khata
-- Live app: [Render URL]
+- Live app: https://khata-aql4.onrender.com
 - Telegram: https://t.me/Ledgy637Bot
 - Video: [YouTube URL]
 
