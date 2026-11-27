@@ -71,7 +71,7 @@ handwritten khata pages; today's sales and profit.
 - Repo: https://github.com/Utkarsh-Aggarwal/khata
 - Live app: https://khata-aql4.onrender.com
 - Telegram: https://t.me/Ledgy637Bot
-- Video: [YouTube URL]
+- Video: https://youtu.be/PQjKh1zjRt4
 
 ## Judge notes (private field)
 - Telegram: message @Ledgy637Bot. Each judge gets a private khata. Try `Ramesh ko 500 udhaar`, a Hindi voice note, a bill

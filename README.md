@@ -7,8 +7,11 @@ Small Indian shops run on a paper khata. Khata keeps the habit (talk, write, pho
 and stitches it to a Telegram bot, a Whisper speech model, a vision model and a Google Sheet that
 the shopkeeper can edit directly.
 
-**Try it:** message [@Ledgy637Bot](https://t.me/Ledgy637Bot) on Telegram, or open the web demo
-(link in the Devpost entry). Each Telegram chat gets its own private khata.
+**Watch:** [demo video (under 3 min)](https://youtu.be/PQjKh1zjRt4)
+
+**Try it:** message [@Ledgy637Bot](https://t.me/Ledgy637Bot) on Telegram, or open the web demo at
+<https://khata-aql4.onrender.com> (the first load can take up to a minute on the free host). Each Telegram chat and
+each browser gets its own private khata.
 
 ## Three modes
 
